@@ -1,143 +1,169 @@
-# Taskfile.yml
-# Project: fouchger-homelab
-# Purpose: Bootstrap a host with Git + gh, then clone/update the repo into dev or prod.
+# ###########################################################################
+# File: Taskfile.yml
+# Description:
+#   Bootstrap Taskfile for fouchger-homelab hosts.
+#   Each item can be run independently or combined via the `bootstrap` task.
+#
 # Notes:
-# - Requires go-task to run this file. Use bootstrap.sh on a fresh host.
+#   - Designed for Debian/Ubuntu (and Proxmox host shells where apt is available).
+#   - Most tasks require sudo/root for apt installs.
+#   - Ansible is installed via pipx (isolated Python tooling).
+#   - Terraform and Packer default to HashiCorp apt repository installs.
+#   - Code Server uses the community Proxmox script you specified (network required).
+#
+# Usage:
+#   task -l
+#   task bootstrap
+#   task upgrade
+#   task ansible
+#   task terraform
+#   task packer
+#   task code-server
+# ###########################################################################
 
 version: "3"
 
-silent: false
-
 vars:
-  ENV: '{{default "dev" .ENV}}'
+  APT_GET: "apt-get"
+  SUDO: "{{.SUDO | default \"sudo\"}}"
+  DEBIAN_FRONTEND: "noninteractive"
+  HASHICORP_KEYRING: "/usr/share/keyrings/hashicorp-archive-keyring.gpg"
+  HASHICORP_LIST: "/etc/apt/sources.list.d/hashicorp.list"
 
-  # Requested defaults
-  REPO: '{{default "Fouchger/Fouchger_Homelab" .REPO}}'
-  BRANCH: '{{default "main" .BRANCH}}'
-
-  # Destination roots
-  DEV_DIR: '{{default (printf "%s/Github/Fouchger_Homelab" .HOME) .DEV_DIR}}'
-  PROD_DIR: '{{default "/opt/prod" .PROD_DIR}}'
-
-  REPO_NAME:
-    sh: |
-      set -e
-      r="{{.REPO}}"
-      r="${r%.git}"
-      echo "$(basename "$r")"
-
-  DEST_DIR:
-    sh: |
-      set -e
-      if [ "{{.ENV}}" = "prod" ]; then
-        echo "{{.PROD_DIR}}/{{.REPO_NAME}}"
-      else
-        # Dev should be the repo folder itself (no nesting)
-        echo "{{.DEV_DIR}}"
-      fi
+env:
+  DEBIAN_FRONTEND: "{{.DEBIAN_FRONTEND}}"
 
 tasks:
   default:
     desc: Show available tasks
     cmds:
-      - task --list
-
-  doctor:
-    desc: Validate environment and show resolved paths
-    cmds:
-      - |
-        set -e
-        echo "ENV={{.ENV}}"
-        echo "REPO={{.REPO}}"
-        echo "BRANCH={{.BRANCH}}"
-        echo "DEST_DIR={{.DEST_DIR}}"
-        command -v git >/dev/null 2>&1 && echo "git: OK" || echo "git: MISSING"
-        command -v gh  >/dev/null 2>&1 && echo "gh:  OK" || echo "gh:  MISSING"
-        command -v task >/dev/null 2>&1 && echo "task: OK" || echo "task: MISSING (run bootstrap.sh)"
+      - task -l
 
   bootstrap:
-    desc: Install Git + gh, then clone/update the repo into ENV=dev|prod
-    cmds:
-      - install:prereqs
-      - install:git
-      - install:gh
-      - repo:sync
+    desc: Run full bootstrap (upgrade system + install all requested tools)
+    deps:
+      - upgrade
+      - python3
+      - pipx
+      - ansible
+      - terraform
+      - packer
+      - code-server
 
-  install:prereqs:
-    desc: Install base prerequisites used by other tasks
+  upgrade:
+    desc: Upgrade the system (update, full-upgrade, autoremove)
     cmds:
-      - sudo apt-get update
-      - sudo apt-get install -y ca-certificates curl gnupg lsb-release
+      - "{{.SUDO}} {{.APT_GET}} update -y"
+      - "{{.SUDO}} {{.APT_GET}} full-upgrade -y"
+      - "{{.SUDO}} {{.APT_GET}} autoremove -y"
+      - "{{.SUDO}} {{.APT_GET}} autoclean -y"
 
-  install:git:
-    desc: Install Git
-    status:
-      - command -v git >/dev/null 2>&1
+  python3:
+    desc: Install Python3 tooling required for pipx
     cmds:
-      - sudo apt-get update
-      - sudo apt-get install -y git
-      - git --version
-
-  install:gh:
-    desc: Install GitHub CLI (gh)
-    status:
-      - command -v gh >/dev/null 2>&1
-    cmds:
-      - sudo mkdir -p /etc/apt/keyrings
-      - curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
-      - sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+      - "{{.SUDO}} {{.APT_GET}} update -y"
       - >
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg]
-        https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
-      - sudo apt-get update
-      - sudo apt-get install -y gh
-      - gh --version
+        {{.SUDO}} {{.APT_GET}} install -y
+        python3 python3-venv python3-pip
+    status:
+      - command -v python3 >/dev/null 2>&1
 
-  gh:auth:
-    desc: Authenticate gh (interactive, needed for private repos)
+  pipx:
+    desc: Install pipx and ensure PATH is configured for the current user
+    deps:
+      - python3
     cmds:
-      - gh auth status || true
-      - gh auth login
+      - "{{.SUDO}} {{.APT_GET}} update -y"
+      - "{{.SUDO}} {{.APT_GET}} install -y pipx"
+      - "pipx ensurepath || true"
+      - "python3 -m pipx ensurepath || true"
+    status:
+      - command -v pipx >/dev/null 2>&1
 
-  repo:sync:
-    desc: Clone or update the repo (checks out BRANCH)
-    preconditions:
-      - sh: |
-          if [ "{{.ENV}}" = "dev" ] || [ "{{.ENV}}" = "prod" ]; then exit 0; fi
-          exit 1
-        msg: "ENV must be dev or prod."
+  ansible:
+    desc: Install Ansible via pipx (isolated install)
+    deps:
+      - pipx
+    cmds:
+      - "pipx install --include-deps ansible || pipx upgrade ansible"
+      - "ansible --version"
+    status:
+      - command -v ansible >/dev/null 2>&1
+
+  hashicorp-repo:
+    desc: Add HashiCorp apt repository (Terraform/Packer)
+    cmds:
+      - "{{.SUDO}} {{.APT_GET}} update -y"
+      - "{{.SUDO}} {{.APT_GET}} install -y ca-certificates curl gnupg lsb-release"
+      - "{{.SUDO}} install -m 0755 -d /etc/apt/keyrings"
+      - >
+        curl -fsSL https://apt.releases.hashicorp.com/gpg |
+        {{.SUDO}} gpg --dearmor -o {{.HASHICORP_KEYRING}}
+      - "{{.SUDO}} chmod a+r {{.HASHICORP_KEYRING}}"
+      - >
+        echo "deb [signed-by={{.HASHICORP_KEYRING}}] https://apt.releases.hashicorp.com $(lsb_release -cs) main" |
+        {{.SUDO}} tee {{.HASHICORP_LIST}} >/dev/null
+      - "{{.SUDO}} {{.APT_GET}} update -y"
+    status:
+      - test -f "{{.HASHICORP_LIST}}"
+
+  terraform:
+    desc: Install Terraform (HashiCorp apt repo)
+    deps:
+      - hashicorp-repo
+    cmds:
+      - "{{.SUDO}} {{.APT_GET}} install -y terraform"
+      - "terraform version"
+    status:
+      - command -v terraform >/dev/null 2>&1
+
+  packer:
+    desc: Install Packer (HashiCorp apt repo)
+    deps:
+      - hashicorp-repo
+    cmds:
+      - "{{.SUDO}} {{.APT_GET}} install -y packer"
+      - "packer version"
+    status:
+      - command -v packer >/dev/null 2>&1
+
+  code-server:
+    desc: Install code-server (defaults to standard installer; optional Proxmox script via USE_PROXMOX_SCRIPT=1)
     cmds:
       - |
-        set -e
-        echo "Destination: {{.DEST_DIR}}"
+        set -euo pipefail
 
-        if [ "{{.ENV}}" = "prod" ]; then
-          sudo mkdir -p "{{.PROD_DIR}}"
-          sudo chown -R "$(id -u):$(id -g)" "{{.PROD_DIR}}"
-        else
-          mkdir -p "$(dirname "{{.DEV_DIR}}")"
-        fi
-
-        if [ -d "{{.DEST_DIR}}/.git" ]; then
-          echo "Repo exists, updating..."
-          cd "{{.DEST_DIR}}"
-          git fetch --all --prune
-          git checkout "{{.BRANCH}}"
-          git pull
+        # If already installed, do nothing.
+        if command -v code-server >/dev/null 2>&1; then
+          echo "code-server already installed. Skipping."
           exit 0
         fi
 
-        echo "Cloning {{.REPO}}..."
-        if echo "{{.REPO}}" | grep -qE '^https?://|^git@'; then
-          git clone --branch "{{.BRANCH}}" "{{.REPO}}" "{{.DEST_DIR}}"
-        else
-          gh repo clone "{{.REPO}}" "{{.DEST_DIR}}" -- --branch "{{.BRANCH}}"
+        use_proxmox_script="${USE_PROXMOX_SCRIPT:-0}"
+
+        if [ "$use_proxmox_script" = "1" ]; then
+          # Guardrails: only allow Proxmox script when running in a VM or container.
+          if command -v systemd-detect-virt >/dev/null 2>&1; then
+            virt="$(systemd-detect-virt || true)"
+            cont="$(systemd-detect-virt -c || true)"
+
+            if [ "$virt" = "none" ] && [ "$cont" = "none" ]; then
+              echo "USE_PROXMOX_SCRIPT=1 set, but no virtualisation detected (bare metal). Refusing to run Proxmox script."
+              echo "Unset USE_PROXMOX_SCRIPT or run standard installer."
+              exit 1
+            fi
+          else
+            echo "USE_PROXMOX_SCRIPT=1 set, but systemd-detect-virt is unavailable. Refusing to run Proxmox script."
+            echo "Unset USE_PROXMOX_SCRIPT or install systemd tooling."
+            exit 1
+          fi
+
+          echo "USE_PROXMOX_SCRIPT=1 set. Installing via Proxmox community script."
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
+          exit 0
         fi
 
-  repo:status:
-    desc: Show git status
-    preconditions:
-      - sh: '[ -d "{{.DEST_DIR}}/.git" ]'
-        msg: "Repo not found at {{.DEST_DIR}}. Run task repo:sync first."
-    cmds:
-      - cd "{{.DEST_DIR}}" && git status
+        echo "Installing via standard code-server installer."
+        curl -fsSL https://code-server.dev/install.sh | sh
+    status:
+      - command -v code-server >/dev/null 2>&1
