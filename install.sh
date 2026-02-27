@@ -4,7 +4,7 @@
 # Created: 2026/02/08
 # Updated: 2026/02/28
 # Description:
-#   Production-ready bootstrap installer for Fouchger/homelab.
+#   Production-ready bootstrap installer for Fouchger/Fouchger_Homelab.
 # Notes:
 #   - Debian/Ubuntu oriented (apt-get).
 #   - Clones or updates the repo using GitHub CLI (gh) when available.
@@ -40,7 +40,7 @@ _success() { printf '%s\n' "SUCCESS: $*"; }
 # ----------------------------
 # Globals used across steps
 # ----------------------------
-REPO_SLUG="Fouchger/homelab"
+REPO_SLUG="Fouchger/Fouchger_Homelab"
 BRANCH="${HOMELAB_BRANCH:-main}"
 TARGET_DIR=""
 ROOT_DIR=""
@@ -159,8 +159,8 @@ _set_environment() {
 # ----------------------------
 _set_target_dir() {
   case "${SETUP:-}" in
-    prod) TARGET_DIR="$HOME/app/homelab" ;;
-    dev)  TARGET_DIR="$HOME/Github/homelab" ;;
+    prod) TARGET_DIR="$HOME/app/Fouchger_Homelab" ;;
+    dev)  TARGET_DIR="$HOME/Github/Fouchger_Homelab" ;;
     *)    _error "SETUP must be 'prod' or 'dev'."; return 1 ;;
   esac
 
