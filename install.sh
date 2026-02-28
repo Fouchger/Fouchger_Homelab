@@ -408,19 +408,20 @@ EOF
     local value="${2-}"
     local file="${3:?Missing file}"
 
-    # Basic guardrails: avoid multi-line values in dotenv
-    if printf '%s' "${value}" | grep -q $'\n'; then
+    # Guardrails: avoid multi-line values in dotenv
+    if [[ "${value}" == *$'\n'* ]]; then
       _warn "Skipping ${key} update: multi-line value is not dotenv-safe."
       return 0
     fi
 
-    local esc_value
-    esc_value="$(printf '%s' "${value}" | sed -e 's/[\/&]/\\&/g')"
-
+    # Update if present, else append.
     if grep -qE "^[[:space:]]*${key}=" "${file}"; then
       local tmp
       tmp="$(mktemp)"
-      sed -E "s|^[[:space:]]*${key}=.*|${key}=${esc_value}|" "${file}" >"${tmp}" && mv "${tmp}" "${file}"
+      awk -v k="${key}" -v v="${value}" '
+        $0 ~ "^[[:space:]]*" k "=" { print k "=" v; next }
+        { print }
+      ' "${file}" >"${tmp}" && mv "${tmp}" "${file}"
     else
       printf '%s=%s\n' "${key}" "${value}" >>"${file}"
     fi
