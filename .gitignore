@@ -37,4 +37,4 @@ override.tf.json
 terraform.rc
 
 # Local homelab state
-state/configs/.env
+state/

@@ -1,0 +1,11 @@
+site_name: Fouchger Homelab
+site_description: Ansible playbooks for my homelab
+site_author: Fouchger
+site_url: https://...
+copyright: Copyright & Copy; 2026 Fouchger
+dev_addr: '0.0.0.0:8000'
+
+# Repository
+repo_name: Fouchger/Fouchger_Homelab
+repo_url: https://github.com/Fouchger/Fouchger_Homelab
+edit_uri: "edit/main/docs/"

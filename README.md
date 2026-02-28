@@ -117,3 +117,9 @@ task lib:require-virtualised
 1. `state/configs/.env` is a local runtime file and should not be committed.
 2. If you run the installer on a repo with local changes, it will prompt you to commit, stash, or abort. In non-interactive runs it defaults to stashing.
 3. The Proxmox code-server script is intentionally gated to VM or container environments.
+
+## References
+
+https://nicholaswilde.io/homelab/ 
+https://github.com/nicholaswilde/homelab 
+https://github.com/nicholaswilde/homelab-playbooks
