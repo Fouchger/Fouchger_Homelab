@@ -382,8 +382,8 @@ _ensure_executables() {
 # Write/update env metadata (optional but useful)
 # ----------------------------
 _write_update_env_file() {
-  local env_dir="${ROOT_DIR}/state/configs"
-  local env_file="${env_dir}/.env"
+  env_dir="${ROOT_DIR}/state/configs"
+  env_file="${env_dir}/.env"
 
   mkdir -p "${env_dir}"
 
