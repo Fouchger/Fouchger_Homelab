@@ -1,0 +1,261 @@
+# ###########################################################################
+# File: tasks/bootstrap.Taskfile.yml
+# Description:
+#   Bootstrap Taskfile for fouchger-homelab hosts.
+#   Each item can be run independently or combined via the `bootstrap` task.
+#
+# Notes:
+#   - Designed for Debian/Ubuntu (and Proxmox host shells where apt is available).
+#   - Most tasks require sudo/root for apt installs.
+#   - Ansible is installed via pipx (isolated Python tooling).
+#   - Terraform and Packer default to HashiCorp apt repository installs.
+#   - Code Server uses the community Proxmox script you specified (network required).
+#
+# Usage:
+#   task -l
+#   task bootstrap
+#   task upgrade
+#   task ansible
+#   task terraform
+#   task packer
+#   task code-server
+# ###########################################################################
+
+version: "3"
+
+vars:
+  APT_GET: "apt-get"
+  SUDO: "{{.SUDO | default \"sudo\"}}"
+  DEBIAN_FRONTEND: "noninteractive"
+  APT_LOCK_TIMEOUT: "{{.APT_LOCK_TIMEOUT | default \"600\"}}"  # seconds
+  APT_LOCK_SLEEP: "{{.APT_LOCK_SLEEP | default \"3\"}}"        # seconds
+  HASHICORP_KEYRING: "/usr/share/keyrings/hashicorp-archive-keyring.gpg"
+  HASHICORP_LIST: "/etc/apt/sources.list.d/hashicorp.list"
+
+env:
+  DEBIAN_FRONTEND: "{{.DEBIAN_FRONTEND}}"
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task -l
+
+  all:
+    desc: Run full bootstrap (upgrade system + install all requested tools)
+    # Important: use sequential calls (cmds) rather than deps.
+    # Task runs deps in parallel by default, which can deadlock on apt locks.
+    cmds:
+      - task: upgrade
+      - task: python3
+      - task: pipx
+      - task: ansible
+      - task: terraform
+      - task: packer
+      - task: code-server
+
+  bootstrap:
+    desc: Alias for bootstrap:all
+    cmds:
+      - task: all
+
+  upgrade:
+    desc: Upgrade the system (update, full-upgrade, autoremove)
+    cmds:
+      - task: apt:update
+      - task: apt:run
+        vars: { ARGS: "full-upgrade -y" }
+      - task: apt:run
+        vars: { ARGS: "autoremove -y" }
+      - task: apt:run
+        vars: { ARGS: "autoclean -y" }
+
+  python3:
+    desc: Install Python3 tooling required for pipx
+    cmds:
+      - task: apt:update
+      - task: apt:install
+        vars:
+          PKGS: "python3 python3-venv python3-pip"
+    status:
+      - command -v python3 >/dev/null 2>&1
+
+  pipx:
+    desc: Install pipx and ensure PATH is configured for the current user
+    deps:
+      - python3
+    cmds:
+      - task: apt:update
+      - task: apt:install
+        vars:
+          PKGS: "pipx"
+      - "pipx ensurepath || true"
+      - "python3 -m pipx ensurepath || true"
+    status:
+      - command -v pipx >/dev/null 2>&1
+
+  ansible:
+    desc: Install Ansible via pipx (isolated install)
+    deps:
+      - pipx
+    cmds:
+      - "pipx install --include-deps ansible || pipx upgrade ansible"
+      # Optional: Install argcomplete for bash completion
+      - pipx inject --include-apps ansible argcomplete
+    status:
+      - "ansible --version"
+      - command -v ansible >/dev/null 2>&1
+
+  hashicorp-repo:
+    desc: Add HashiCorp apt repository (Terraform/Packer)
+    cmds:
+      - task: apt:update
+      - task: apt:install
+        vars:
+          PKGS: "ca-certificates curl gnupg lsb-release"
+      - "{{.SUDO}} install -m 0755 -d /etc/apt/keyrings"
+      - >
+        curl -fsSL https://apt.releases.hashicorp.com/gpg |
+        {{.SUDO}} gpg --dearmor -o {{.HASHICORP_KEYRING}}
+      - "{{.SUDO}} chmod a+r {{.HASHICORP_KEYRING}}"
+      - >
+        echo "deb [signed-by={{.HASHICORP_KEYRING}}] https://apt.releases.hashicorp.com $(lsb_release -cs) main" |
+        {{.SUDO}} tee {{.HASHICORP_LIST}} >/dev/null
+      - task: apt:update
+    status:
+      - test -f "{{.HASHICORP_LIST}}"
+
+  terraform:
+    desc: Install Terraform (HashiCorp apt repo)
+    deps:
+      - hashicorp-repo
+    cmds:
+      - task: apt:install
+        vars:
+          PKGS: "terraform"
+      - "terraform version"
+    status:
+      - command -v terraform >/dev/null 2>&1
+
+  packer:
+    desc: Install Packer (HashiCorp apt repo)
+    deps:
+      - hashicorp-repo
+    cmds:
+      - task: apt:install
+        vars:
+          PKGS: "packer"
+      - "packer version"
+    status:
+      - command -v packer >/dev/null 2>&1
+
+  apt:wait:
+    desc: Wait for apt/dpkg locks to be released (handles unattended upgrades)
+    cmds:
+      - |
+        set -euo pipefail
+
+        timeout={{.APT_LOCK_TIMEOUT}}
+        sleep_s={{.APT_LOCK_SLEEP}}
+        start="$(date +%s)"
+
+        locks=(
+          /var/lib/apt/lists/lock
+          /var/lib/dpkg/lock
+          /var/lib/dpkg/lock-frontend
+          /var/cache/apt/archives/lock
+        )
+
+        while true; do
+          if {{.SUDO}} fuser "${locks[@]}" >/dev/null 2>&1; then
+            now="$(date +%s)"
+            if [ $((now - start)) -ge "$timeout" ]; then
+              echo "Timed out after ${timeout}s waiting for apt/dpkg locks."
+              echo "Active processes holding locks (if any):"
+              {{.SUDO}} fuser -v "${locks[@]}" || true
+              exit 1
+            fi
+            echo "apt/dpkg is busy. Waiting ${sleep_s}s..."
+            sleep "$sleep_s"
+            continue
+          fi
+          break
+        done
+
+  apt:run:
+    desc: Run apt-get with lock handling (provide ARGS="...")
+    vars:
+      ARGS: "{{.ARGS | default \"\"}}"
+    deps:
+      - apt:wait
+    cmds:
+      - |
+        set -euo pipefail
+        if [ -z "{{.ARGS}}" ]; then
+          echo "Missing ARGS. Example: task bootstrap:apt:run -- ARGS=\"update -y\""
+          exit 1
+        fi
+        {{.SUDO}} {{.APT_GET}} {{.ARGS}}
+
+  apt:update:
+    desc: apt-get update with lock handling
+    deps:
+      - apt:wait
+    cmds:
+      - "{{.SUDO}} {{.APT_GET}} update -y"
+
+  apt:install:
+    desc: apt-get install with lock handling (provide PKGS="...")
+    vars:
+      PKGS: "{{.PKGS | default \"\"}}"
+    deps:
+      - apt:wait
+    cmds:
+      - |
+        set -euo pipefail
+        if [ -z "{{.PKGS}}" ]; then
+          echo "Missing PKGS. Example: task bootstrap:apt:install -- PKGS=\"curl ca-certificates\""
+          exit 1
+        fi
+        {{.SUDO}} {{.APT_GET}} install -y {{.PKGS}}
+
+  code-server:
+    desc: Install code-server (defaults to standard installer; optional Proxmox script via USE_PROXMOX_SCRIPT=1)
+    cmds:
+      - |
+        set -euo pipefail
+
+        # If already installed, do nothing.
+        if command -v code-server >/dev/null 2>&1; then
+          echo "code-server already installed. Skipping."
+          exit 0
+        fi
+
+        use_proxmox_script="${USE_PROXMOX_SCRIPT:-0}"
+
+        if [ "$use_proxmox_script" = "1" ]; then
+          # Guardrails: only allow Proxmox script when running in a VM or container.
+          if command -v systemd-detect-virt >/dev/null 2>&1; then
+            virt="$(systemd-detect-virt || true)"
+            cont="$(systemd-detect-virt -c || true)"
+
+            if [ "$virt" = "none" ] && [ "$cont" = "none" ]; then
+              echo "USE_PROXMOX_SCRIPT=1 set, but no virtualisation detected (bare metal). Refusing to run Proxmox script."
+              echo "Unset USE_PROXMOX_SCRIPT or run standard installer."
+              exit 1
+            fi
+          else
+            echo "USE_PROXMOX_SCRIPT=1 set, but systemd-detect-virt is unavailable. Refusing to run Proxmox script."
+            echo "Unset USE_PROXMOX_SCRIPT or install systemd tooling."
+            exit 1
+          fi
+
+          echo "USE_PROXMOX_SCRIPT=1 set. Installing via Proxmox community script."
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
+          exit 0
+        fi
+
+        echo "Installing via standard code-server installer."
+        curl -fsSL https://code-server.dev/install.sh | sh
+    status:
+      - command -v code-server >/dev/null 2>&1

@@ -1,0 +1,161 @@
+# ###########################################################################
+# File: tasks/lib/checks.Taskfile.yml
+# Description:
+#   Shared guardrails and validation tasks for fouchger-homelab Taskfiles.
+#   These checks are designed to be lightweight and composable.
+#
+# Notes:
+#   - Keep these tasks side-effect free where possible.
+#   - Prefer calling these from other tasks before doing anything destructive.
+#   - Debian/Ubuntu oriented.
+#
+# Usage examples:
+#   task lib:ensure-linux
+#   task lib:require-sudo
+#   task lib:require-command -- CMD=curl
+#   task lib:require-apt
+#   task lib:require-virtualised
+# ###########################################################################
+
+version: "3"
+
+vars:
+  SUDO: "{{.SUDO | default \"sudo\"}}"
+
+tasks:
+  ensure-linux:
+    desc: Ensure the OS is Linux
+    cmds:
+      - |
+        set -euo pipefail
+        if [ "$(uname -s)" != "Linux" ]; then
+          echo "This task requires Linux. Detected: $(uname -s)"
+          exit 1
+        fi
+
+  require-sudo:
+    desc: Ensure sudo is available and the user can elevate privileges
+    cmds:
+      - |
+        set -euo pipefail
+        if ! command -v sudo >/dev/null 2>&1; then
+          echo "sudo is required but not installed."
+          exit 1
+        fi
+        if ! sudo -n true >/dev/null 2>&1; then
+          echo "sudo requires a password or is not permitted for this user."
+          echo "Re-run with an interactive shell, or ensure this user has sudo rights."
+          exit 1
+        fi
+
+  require-root:
+    desc: Ensure the current user is root
+    cmds:
+      - |
+        set -euo pipefail
+        if [ "$(id -u)" -ne 0 ]; then
+          echo "This task requires root. Re-run with sudo or as root."
+          exit 1
+        fi
+
+  require-command:
+    desc: Ensure a command exists (provide CMD=...)
+    vars:
+      CMD: "{{.CMD | default \"\"}}"
+    cmds:
+      - |
+        set -euo pipefail
+        if [ -z "{{.CMD}}" ]; then
+          echo "Missing required variable CMD. Example: task lib:require-command -- CMD=curl"
+          exit 1
+        fi
+        if ! command -v "{{.CMD}}" >/dev/null 2>&1; then
+          echo "Required command not found: {{.CMD}}"
+          exit 1
+        fi
+
+  require-apt:
+    desc: Ensure apt-get exists (Debian/Ubuntu family)
+    deps:
+      - ensure-linux
+    cmds:
+      - |
+        set -euo pipefail
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "apt-get not found. This Taskfile is Debian/Ubuntu oriented."
+          exit 1
+        fi
+
+  require-systemd-detect-virt:
+    desc: Ensure systemd-detect-virt is available
+    deps:
+      - ensure-linux
+    cmds:
+      - |
+        set -euo pipefail
+        if ! command -v systemd-detect-virt >/dev/null 2>&1; then
+          echo "systemd-detect-virt not found."
+          echo "Install systemd tooling or adjust tasks to use an alternative detection method."
+          exit 1
+        fi
+
+  require-virtualised:
+    desc: Ensure the host is a VM or container (not bare metal)
+    deps:
+      - require-systemd-detect-virt
+    cmds:
+      - |
+        set -euo pipefail
+        virt="$(systemd-detect-virt || true)"
+        cont="$(systemd-detect-virt -c || true)"
+
+        if [ "$virt" = "none" ] && [ "$cont" = "none" ]; then
+          echo "No virtualisation detected (bare metal). This task is intended for VMs/containers."
+          exit 1
+        fi
+
+  require-container:
+    desc: Ensure the host is a container (e.g., LXC)
+    deps:
+      - require-systemd-detect-virt
+    cmds:
+      - |
+        set -euo pipefail
+        cont="$(systemd-detect-virt -c || true)"
+        if [ "$cont" = "none" ]; then
+          echo "No container detected. This task requires a container environment (e.g., LXC)."
+          exit 1
+        fi
+
+  require-vm:
+    desc: Ensure the host is a virtual machine (not a container)
+    deps:
+      - require-systemd-detect-virt
+    cmds:
+      - |
+        set -euo pipefail
+        virt="$(systemd-detect-virt || true)"
+        cont="$(systemd-detect-virt -c || true)"
+
+        if [ "$cont" != "none" ]; then
+          echo "Container detected ($cont). This task requires a VM."
+          exit 1
+        fi
+        if [ "$virt" = "none" ]; then
+          echo "No VM virtualisation detected. This task requires a VM."
+          exit 1
+        fi
+
+  confirm:
+    desc: Require explicit confirmation (provide PROMPT=... and CONFIRM=YES)
+    vars:
+      PROMPT: "{{.PROMPT | default \"This action is potentially risky.\"}}"
+      CONFIRM: "{{.CONFIRM | default \"\"}}"
+    cmds:
+      - |
+        set -euo pipefail
+        echo "{{.PROMPT}}"
+        if [ "{{.CONFIRM}}" != "YES" ]; then
+          echo "Confirmation required. Re-run with: CONFIRM=YES"
+          exit 1
+        fi
