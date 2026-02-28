@@ -1,5 +1,5 @@
 # ##################################################################################################
-# File: tasks/authenticate.Taskfile.yml
+# File: tasks/git_gh.Taskfile.yml
 # Purpose:
 #   Install Git and GitHub CLI (gh) if missing, then authenticate gh using a Fine-grained PAT and
 #   configure Git to use gh for GitHub authentication.
@@ -57,7 +57,7 @@ tasks:
         fi
 
         echo "Installing git..."
-        sudo {{.APT_GET}} update -y
+        sudo {{.APT_GET}} update
         sudo {{.APT_GET}} install -y git ca-certificates
 
   install:gh:
@@ -78,8 +78,8 @@ tasks:
         fi
 
         echo "Installing gh (GitHub CLI) from the official GitHub apt repository..."
-        sudo {{.APT_GET}} update -y
-        sudo {{.APT_GET}} install -y ca-certificates curl gpg
+        sudo {{.APT_GET}} update
+        sudo {{.APT_GET}} install -y ca-certificates curl gnupg
 
         sudo install -m 0755 -d /etc/apt/keyrings
         curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -90,7 +90,7 @@ tasks:
         echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
           | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
 
-        sudo {{.APT_GET}} update -y
+        sudo {{.APT_GET}} update
         sudo {{.APT_GET}} install -y gh
 
   auth:

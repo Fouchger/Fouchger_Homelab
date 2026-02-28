@@ -455,7 +455,8 @@ _taskfile_install() {
   _info "Installing Task (taskfile)..."
 
   _ensure_cmd_or_install curl curl ca-certificates
-  _ensure_cmd_or_install gpg gpg
+  # On Debian/Ubuntu, the binary is "gpg" but the package is typically "gnupg".
+  _ensure_cmd_or_install gpg gnupg
 
   # Ensure apt transport basics exist
   _ensure_cmd_or_install apt-get apt

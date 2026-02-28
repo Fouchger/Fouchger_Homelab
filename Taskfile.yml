@@ -29,6 +29,19 @@ tasks:
     cmds:
       - task -l
 
+  run:
+    desc: Single entry-point to execute a standard host setup (bootstrap + optional once-off secrets)
+    cmds:
+      - |
+        set -euo pipefail
+        echo "This will run: secrets:once (optional) then bootstrap." 
+        if [ "${RUN_SECRETS_ONCE:-0}" = "1" ]; then
+          task secrets:once
+        else
+          echo "Skipping secrets:once (set RUN_SECRETS_ONCE=1 to enable)."
+        fi
+        task bootstrap
+
   bootstrap:
     desc: Full bootstrap of a host
     cmds:
