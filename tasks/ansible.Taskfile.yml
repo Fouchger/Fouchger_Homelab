@@ -1,0 +1,70 @@
+# ###########################################################################
+# File: tasks/ansible.Taskfile.yml
+# Description:
+#   Ansible execution Taskfile for fouchger-homelab.
+#   Provides a simple entrypoint to run the repo playbooks in a consistent way.
+#
+# Notes:
+#   - Expects Ansible to be installed (recommended: `task bootstrap:ansible`).
+#   - Uses the repo's ansible.cfg and inventory by default.
+#   - Designed for running locally (localhost) or against hosts defined in the
+#     inventory file.
+#
+# Usage:
+#   task ansible:check-reboot
+#   task ansible:check-reboot -- LIMIT=proxmox
+#   task ansible:check-reboot -- EXTRA_ARGS="-v"
+# ###########################################################################
+
+version: "3"
+
+includes:
+  lib: ./lib/checks.Taskfile.yml
+
+vars:
+  # Repo root is the parent of the `tasks/` directory.
+  ROOT_DIR: "{{.TASKFILE_DIR}}/.."
+  ANSIBLE_DIR: "{{.ROOT_DIR}}/ansible"
+  ANSIBLE_CONFIG_FILE: "{{.ANSIBLE_DIR}}/ansible.cfg"
+  INVENTORY: "{{.ANSIBLE_DIR}}/inventory/hosts.yml"
+  PLAYBOOK_CHECK_REBOOT: "{{.ANSIBLE_DIR}}/playbooks/check-reboot.yaml"
+  LIMIT: "{{.LIMIT | default \"\"}}"
+  EXTRA_ARGS: "{{.EXTRA_ARGS | default \"\"}}"
+
+env:
+  # Ensure Ansible uses the repo's configuration regardless of the current
+  # working directory.
+  ANSIBLE_CONFIG: "{{.ANSIBLE_CONFIG_FILE}}"
+
+tasks:
+  default:
+    desc: Show available Ansible tasks
+    cmds:
+      - task -l
+
+  check-reboot:
+    desc: Run playbook ansible/playbooks/check-reboot.yaml
+    deps:
+      - task: lib:require-command
+        vars: { CMD: ansible-playbook }
+    dir: "{{.ROOT_DIR}}"
+    cmds:
+      - |
+        set -euo pipefail
+
+        if [ ! -f "{{.PLAYBOOK_CHECK_REBOOT}}" ]; then
+          echo "Playbook not found: {{.PLAYBOOK_CHECK_REBOOT}}"
+          exit 1
+        fi
+        if [ ! -f "{{.INVENTORY}}" ]; then
+          echo "Inventory not found: {{.INVENTORY}}"
+          exit 1
+        fi
+
+        limit_args=""
+        if [ -n "{{.LIMIT}}" ]; then
+          limit_args="--limit {{.LIMIT}}"
+        fi
+
+        # EXTRA_ARGS can be used for verbosity (-v/-vvv), tags, check mode, etc.
+        ansible-playbook -i "{{.INVENTORY}}" $limit_args "{{.PLAYBOOK_CHECK_REBOOT}}" {{.EXTRA_ARGS}}

@@ -14,7 +14,9 @@ version: "3"
 
 includes:
   bootstrap: ./tasks/bootstrap.Taskfile.yml
-  scm: ./tasks/authenticate.Taskfile.yml
+  git_gh: ./tasks/git_gh.Taskfile.yml
+  ansible: ./tasks/ansible.Taskfile.yml
+  secrets: ./tasks/secrets.Taskfile.yml
   # platform: ./tasks/platform.Taskfile.yml
   # tooling: ./tasks/tooling.Taskfile.yml
   # services: ./tasks/services.Taskfile.yml
@@ -31,3 +33,9 @@ tasks:
     desc: Full bootstrap of a host
     cmds:
       - task: bootstrap:all
+
+  secrets:once:
+    desc: "Once-off secrets setup only (SOPS+age, SSH keys, OpenBao baseline)."
+    cmds:
+      - task: secrets:secrets
+    silent: false
