@@ -427,13 +427,13 @@ EOF
     fi
   }
 
-  _dotenv_upsert "ROOT_DIR" "${ROOT_DIR}" "${env_file}"
+  # _dotenv_upsert "ROOT_DIR" "${ROOT_DIR}" "${env_file}"
   _dotenv_upsert "REPO_DIR" "${TARGET_DIR}" "${env_file}"
   _dotenv_upsert "GITHUB_REPO" "${REPO_SLUG}" "${env_file}"
   _dotenv_upsert "GITHUB_BRANCH" "${BRANCH}" "${env_file}"
   _dotenv_upsert "SETUP" "${SETUP:-prod}" "${env_file}"
-  _dotenv_upsert "HOMELAB_BRANCH" "${HOMELAB_BRANCH:-main}" "${env_file}"
-  _dotenv_upsert "HOMELAB_GIT_PROTOCOL" "${HOMELAB_GIT_PROTOCOL:-https}" "${env_file}"
+  # _dotenv_upsert "HOMELAB_BRANCH" "${HOMELAB_BRANCH:-main}" "${env_file}"
+  # _dotenv_upsert "HOMELAB_GIT_PROTOCOL" "${HOMELAB_GIT_PROTOCOL:-https}" "${env_file}"
   _dotenv_upsert "NONINTERACTIVE" "${NONINTERACTIVE}" "${env_file}"
 
   _success "Updated ${env_file}"
