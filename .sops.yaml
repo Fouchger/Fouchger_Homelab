@@ -1,0 +1,24 @@
+# ##################################################################################################
+# File: .sops.yaml
+# Purpose:
+#   SOPS encryption rules for fouchger-homelab.
+#
+# Notes:
+#   - This config enforces SOPS+age encryption for common secrets locations.
+#   - Keep this file committed to Git.
+#   - Update recipients as your admin set evolves.
+# ##################################################################################################
+
+creation_rules:
+  # Anything under secrets/sops is always encrypted
+  - path_regex: ^secrets/sops/.*\.(ya?ml|json|env|ini)$
+    encrypted_regex: '^(data|stringData|secrets|secret|token|password|key|keys|private|config)$'
+    age: age1z74vk9gy30g3c75rj5kgytqfx7f8xhch9jwfse9jadcakv6k8vuqmzjk0u
+
+  # Common Ansible var files containing secrets
+  - path_regex: ^ansible/group_vars/.*/.*(secret|secrets)\.(ya?ml|json)$
+    age: age1z74vk9gy30g3c75rj5kgytqfx7f8xhch9jwfse9jadcakv6k8vuqmzjk0u
+
+  # OpenBao bootstrap artefacts (encrypted at rest in Git)
+  - path_regex: ^secrets/openbao/.*\.(ya?ml|json)$
+    age: age1z74vk9gy30g3c75rj5kgytqfx7f8xhch9jwfse9jadcakv6k8vuqmzjk0u
