@@ -32,6 +32,7 @@ vars:
   # Prefer /etc/apt/keyrings (modern Debian/Ubuntu guidance)
   HASHICORP_KEYRING: "/etc/apt/keyrings/hashicorp-archive-keyring.gpg"
   HASHICORP_LIST: "/etc/apt/sources.list.d/hashicorp.list"
+  USE_PROXMOX_SCRIPT: 1
 
 env:
   DEBIAN_FRONTEND: "{{.DEBIAN_FRONTEND}}"
