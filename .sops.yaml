@@ -2,23 +2,17 @@
 # File: .sops.yaml
 # Purpose:
 #   SOPS encryption rules for fouchger-homelab.
-#
 # Notes:
-#   - This config enforces SOPS+age encryption for common secrets locations.
-#   - Keep this file committed to Git.
-#   - Update recipients as your admin set evolves.
+#   - Recipient is derived from state/secrets/age/age-key.txt (single source of truth).
 # ##################################################################################################
 
 creation_rules:
-  # Anything under state/secrets/sops is always encrypted
   - path_regex: ^state/secrets/sops/.*\.(ya?ml|json|env|ini)$
     encrypted_regex: '^(data|stringData|secrets|secret|token|password|key|keys|private|config)$'
-    age: age1z74vk9gy30g3c75rj5kgytqfx7f8xhch9jwfse9jadcakv6k8vuqmzjk0u
+    age: ["age1ztf9lmuqpkdmk6d248wz3mqknmdwra2rsmlsphyv2r7cc8sn05hsp0nah4"]
 
-  # Common Ansible var files containing secrets
   - path_regex: ^ansible/group_vars/.*/.*(secret|secrets)\.(ya?ml|json)$
-    age: age1z74vk9gy30g3c75rj5kgytqfx7f8xhch9jwfse9jadcakv6k8vuqmzjk0u
+    age: ["age1ztf9lmuqpkdmk6d248wz3mqknmdwra2rsmlsphyv2r7cc8sn05hsp0nah4"]
 
-  # OpenBao bootstrap artefacts (encrypted at rest in Git)
   - path_regex: ^state/secrets/openbao/.*(\.enc)?\.(ya?ml|json)$
-    age: age1z74vk9gy30g3c75rj5kgytqfx7f8xhch9jwfse9jadcakv6k8vuqmzjk0u
+    age: ["age1ztf9lmuqpkdmk6d248wz3mqknmdwra2rsmlsphyv2r7cc8sn05hsp0nah4"]
