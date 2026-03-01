@@ -224,40 +224,7 @@ tasks:
   code-server:
     desc: Install code-server (defaults to standard installer; optional Proxmox script via USE_PROXMOX_SCRIPT=1)
     cmds:
-      - |
-        set -euo pipefail
+      - bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
 
-        # If already installed, do nothing.
-        if command -v code-server >/dev/null 2>&1; then
-          echo "code-server already installed. Skipping."
-          exit 0
-        fi
-
-        use_proxmox_script="${USE_PROXMOX_SCRIPT:-0}"
-
-        if [ "$use_proxmox_script" = "1" ]; then
-          # Guardrails: only allow Proxmox script when running in a VM or container.
-          if command -v systemd-detect-virt >/dev/null 2>&1; then
-            virt="$(systemd-detect-virt || true)"
-            cont="$(systemd-detect-virt -c || true)"
-
-            if [ "$virt" = "none" ] && [ "$cont" = "none" ]; then
-              echo "USE_PROXMOX_SCRIPT=1 set, but no virtualisation detected (bare metal). Refusing to run Proxmox script."
-              echo "Unset USE_PROXMOX_SCRIPT or run standard installer."
-              exit 1
-            fi
-          else
-            echo "USE_PROXMOX_SCRIPT=1 set, but systemd-detect-virt is unavailable. Refusing to run Proxmox script."
-            echo "Unset USE_PROXMOX_SCRIPT or install systemd tooling."
-            exit 1
-          fi
-
-          echo "USE_PROXMOX_SCRIPT=1 set. Installing via Proxmox community script."
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
-          exit 0
-        fi
-
-        echo "Installing via standard code-server installer."
-        curl -fsSL https://code-server.dev/install.sh | sh
     status:
       - command -v code-server >/dev/null 2>&1
