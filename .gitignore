@@ -43,3 +43,4 @@ state/
 
 # Secrets tooling private material (do not commit)
 state/secrets/age/
+secrets/age/
