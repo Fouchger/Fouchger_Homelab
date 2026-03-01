@@ -53,7 +53,7 @@ tasks:
       - task: secrets:secrets
     silent: false
 
-  git_gh:once:
+  git_gh:
     desc: "Once-off authorising Git & GitHub"
     cmds:
       # Install first so auth does not fail on fresh hosts.
