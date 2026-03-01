@@ -32,13 +32,13 @@ Operator responsibilities typically include:
 ## SOPS + age operations
 
 ### Where secrets live
-- `secrets/sops/` contains encrypted secrets and config state (committed to Git)
+- `state/secrets/sops/` contains encrypted secrets and config state (kept locally under `state/`, which is ignored by Git by default)
 - `ansible/group_vars/**` secret files should be SOPS-encrypted where appropriate
-- `secrets/age/` contains private age identities (not committed to Git)
+- `state/secrets/age/` contains private age identities (not committed to Git)
 
 ### Adding a new admin device
 1. On the admin device, generate an age identity:
-   - `age-keygen -o secrets/age/age-key.txt`
+   - `age-keygen -o state/secrets/age/age-key.txt`
 2. Extract the public key (recipient) and add it to the recipients list used by the repo.
 3. Update `.sops.yaml` to include the new recipient as required.
 4. Re-encrypt affected files so all required recipients can decrypt.
@@ -46,7 +46,7 @@ Operator responsibilities typically include:
 Operational note: keep the number of recipients tight. Too many recipients can become governance debt.
 
 ### Encrypt a new secrets file
-1. Place the file under `secrets/sops/` or the relevant Ansible secrets path.
+1. Place the file under `state/secrets/sops/` or the relevant Ansible secrets path.
 2. Encrypt in place:
    - `sops -e -i <file>`
 
@@ -83,7 +83,7 @@ Assumptions:
 
 Steps:
 1. Retrieve unseal keys via the encrypted bootstrap artefact:
-   - `sops -d secrets/openbao/bootstrap.enc.yaml`
+   - `sops -d state/secrets/openbao/bootstrap.enc.yaml`
 2. Provide unseal keys (3 of 5) to OpenBao:
    - `bao operator unseal`
    - Repeat until unseal threshold is met

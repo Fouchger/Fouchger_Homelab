@@ -83,22 +83,22 @@ USE_PROXMOX_SCRIPT=1 task bootstrap:code-server
 Install Git and GitHub CLI if required, authenticate `gh` using a Fine-grained PAT, and configure Git to use `gh` credentials:
 
 ```bash
-task scm:bootstrap
+task git_gh:bootstrap
 ```
 
 If you want to run the steps separately:
 
 ```bash
-task scm:install
-task scm:auth
-task scm:status
+task git_gh:install
+task git_gh:auth
+task git_gh:status
 ```
 
 For automation, prefer providing the token as an environment variable:
 
 ```bash
 export GITHUB_TOKEN="<your fine-grained PAT>"
-task scm:auth:gh
+task git_gh:auth:gh
 ```
 
 ### Shared guardrails

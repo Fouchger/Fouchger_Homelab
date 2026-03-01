@@ -40,4 +40,3 @@ terraform.rc
 state/
 
 # Secrets tooling private material (do not commit)
-secrets/age/

@@ -10,8 +10,8 @@
 # ##################################################################################################
 
 creation_rules:
-  # Anything under secrets/sops is always encrypted
-  - path_regex: ^secrets/sops/.*\.(ya?ml|json|env|ini)$
+  # Anything under state/secrets/sops is always encrypted
+  - path_regex: ^state/secrets/sops/.*\.(ya?ml|json|env|ini)$
     encrypted_regex: '^(data|stringData|secrets|secret|token|password|key|keys|private|config)$'
     age: age1z74vk9gy30g3c75rj5kgytqfx7f8xhch9jwfse9jadcakv6k8vuqmzjk0u
 
@@ -20,5 +20,5 @@ creation_rules:
     age: age1z74vk9gy30g3c75rj5kgytqfx7f8xhch9jwfse9jadcakv6k8vuqmzjk0u
 
   # OpenBao bootstrap artefacts (encrypted at rest in Git)
-  - path_regex: ^secrets/openbao/.*\.(ya?ml|json)$
+  - path_regex: ^state/secrets/openbao/.*(\.enc)?\.(ya?ml|json)$
     age: age1z74vk9gy30g3c75rj5kgytqfx7f8xhch9jwfse9jadcakv6k8vuqmzjk0u

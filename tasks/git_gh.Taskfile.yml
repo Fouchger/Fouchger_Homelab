@@ -12,7 +12,7 @@
 #       * Token must be created for the correct owner (user/org) and repositories.
 #       * Ensure it has sufficient permissions for your workflows (for example, repo contents read/write).
 #   - Non-interactive usage:
-#       * Export GITHUB_TOKEN (recommended) or GH_TOKEN prior to running `task scm:auth`.
+#       * Export GITHUB_TOKEN (recommended) or GH_TOKEN prior to running `task git_gh:auth` (or `task git_gh:auth`).
 #   - Security:
 #       * Token is never echoed. When prompted, input is hidden.
 #       * Avoid pasting tokens into command history; prefer environment variables or the prompt.
@@ -106,7 +106,7 @@ tasks:
         set -euo pipefail
 
         if ! command -v gh >/dev/null 2>&1; then
-          echo "gh not installed. Run: task scm:install"
+          echo "gh not installed. Run: task git_gh:install (or task git_gh:install)"
           exit 1
         fi
 
