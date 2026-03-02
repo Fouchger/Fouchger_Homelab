@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ##################################################################################################
-# File: scripts/openbao-login-interactive.sh
+# File: scripts/openbao-login.sh
 # Purpose:
 #   Interactive OpenBao operator helper:
 #     - Decrypt SOPS bootstrap
