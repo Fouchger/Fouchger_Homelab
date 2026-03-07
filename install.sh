@@ -571,10 +571,10 @@ _render_state_env_content() {
 
   case "${mode}" in
     example)
-      repo_dir_value=""
-      github_branch_value="branch1"
-      setup_value="prod"
-      noninteractive_value="0"
+      repo_dir_value="$ROOT_DIR"
+      github_branch_value="${BRANCH}"
+      setup_value="${SETUP}"
+      noninteractive_value="${NONINTERACTIVE}"
       ;;
     local)
       repo_dir_value="${TARGET_DIR}"

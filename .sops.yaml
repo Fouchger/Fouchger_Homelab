@@ -1,14 +1,9 @@
-# ################################################################
+# ================================================================
 # File: .sops.yaml
-# Created: 2026/03/07
-# Updated: 2026/03/07
-# Description:
-#   SOPS creation rules for all secrets stored under state/secrets/.
-# Notes:
-#   - Only encrypted files should live in Git.
-#   - Plaintext working files should remain temporary and untracked.
-# ################################################################
+# Purpose:
+#   SOPS creation rules for secrets stored under state/secrets/
+# ================================================================
 creation_rules:
-  - path_regex: ^state/secrets/.*\.(enc\.ya?ml|enc\.json|enc\.env|enc\.ini|enc\.txt|enc\.hcl)$
+  - path_regex: ^state/secrets/.*\.(ya?ml|json|env|ini|txt|conf)$
     age: >-
-      age1zmp0szp9fxxpr8zn7jtg78xawfha6rjcp5905nrpdvldunmy6qsstvtkcf
+      age1m9pp3ssckx408jxytpd4lqwy3v3tqrks3q5vkca6klydv8sv9vsq2pguyu,age1y9k99aucx85vfd9xr9y9zfnlsg3t834lvkrcc2qk8caj3x0rry6qdwr8r7

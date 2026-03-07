@@ -1,94 +1,34 @@
-# ################################################################
+# ================================================================
 # File: Taskfile.yml
-# Created: 2026/03/07
-# Updated: 2026/03/07
-# Description:
-#   Root task orchestration for the homelab repository.
-#
+# Purpose:
+#   Root Taskfile entry point for the homelab repository.
 # Notes:
-#   - This Taskfile provides a single entry point for ordered execution.
-#   - Subsidiary Taskfiles are included under namespaces.
-#   - The default all task runs safe, repeatable bootstrap steps first.
-#   - OpenBao bootstrap is optional and only runs when explicitly enabled.
-# ################################################################
+#   - Includes the reusable secrets task set.
+#   - Extend this file with additional domain Taskfiles over time.
+# ================================================================
 
 version: '3'
 
-silent: false
-
 includes:
-  file_secrets: ./tasks/secrets.Taskfile.yml
+  secrets:
+    taskfile: ./tasks/secrets.Taskfile.yml
+    flatten: true
 
-vars:
-  ENABLE_OPENBAO_BOOTSTRAP: '{{default "0" .ENABLE_OPENBAO_BOOTSTRAP}}'
 
 tasks:
-  default:
-    desc: Run the standard homelab bootstrap sequence
-    cmds:
-      - task: all
-
   all:
-    desc: Run all standard bootstrap tasks in the correct order
+    desc: Run the standard homelab bootstrap tasks
     cmds:
-      - task: repo:init
-      - task: repo:env:init
-      - task: file_secrets:all
-      - |
-        bash -eu -c '
-          openbao_status_file="state/secrets/openbao/rendered/status.json"
+      - task: init
+      - task: tools:check
+      - task: sops:bootstrap
+      - task: openbao:config:render
 
-          if [ -f "$openbao_status_file" ]; then
-            ENABLE_OPENBAO_BOOTSTRAP=0
-          else
-            ENABLE_OPENBAO_BOOTSTRAP=1
-          fi
-
-          if [ "$ENABLE_OPENBAO_BOOTSTRAP" = "1" ]; then
-            if [ -z "${OPENBAO_ADDR:-}" ]; then
-              echo "OpenBao bootstrap required but OPENBAO_ADDR is not set" >&2
-              exit 1
-            fi
-            echo "OpenBao status file not found, running OpenBao bootstrap tasks"
-            task file_secrets:openbao:all
-          else
-            echo "OpenBao status file found, skipping OpenBao bootstrap tasks"
-          fi
-        '
-
-  repo:init:
-    desc: Prepare repository-local directories and safe defaults
+  day1:
+    desc: Complete day-1 secrets bootstrap for the homelab
     cmds:
-      - |
-        set -eu
-        mkdir -p state/configs tasks
-        mkdir -p state
-        chmod 700 state || true
-        echo "Repository bootstrap directories are ready"
-
-  repo:env:init:
-    desc: Create a local environment file from the example when missing
-    cmds:
-      - |
-        set -eu
-        mkdir -p state/configs
-        if [ ! -f state/configs/.env ] && [ -f config/examples/state.env.example ]; then
-          cp config/examples/state.env.example state/configs/.env
-          chmod 600 state/configs/.env
-          echo "Created state/configs/.env from example defaults"
-        else
-          if [ ! -f config/examples/state.env.example ]; then
-            echo "No example file was found"
-          else
-            echo "Local environment file already present"
-          fi
-        fi
-
-  repo:check:
-    desc: Show the effective bootstrap configuration
-    cmds:
-      - |
-        set -eu
-        echo "ENABLE_OPENBAO_BOOTSTRAP={{.ENABLE_OPENBAO_BOOTSTRAP}}"
-        echo "OPENBAO_ADDR=${OPENBAO_ADDR:-}"
-        echo "OPENBAO_CACERT=${OPENBAO_CACERT:-}"
+      - task: init
+      - task: tools:install
+      - task: sops:bootstrap
+      - task: openbao:bootstrap:standalone
+      - task: report

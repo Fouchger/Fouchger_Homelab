@@ -1,0 +1,39 @@
+# ================================================================
+# File: templates/openbao/openbao.service.tmpl
+# Purpose:
+#   Reference systemd unit template for standalone OpenBao.
+# Notes:
+#   - The Taskfile currently renders the active unit inline.
+#   - This template is included as a future-facing reusable reference.
+# ================================================================
+
+[Unit]
+Description=OpenBao secrets management server
+Documentation=https://openbao.org/docs/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openbao
+Group=openbao
+ExecStart=/usr/bin/bao server -config=/etc/openbao/openbao.hcl
+ExecReload=/bin/kill --signal HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+AmbientCapabilities=CAP_IPC_LOCK
+CapabilityBoundingSet=CAP_IPC_LOCK
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/etc/openbao state/secrets/openbao/runtime/data
+WorkingDirectory=state/secrets/openbao/runtime/data
+
+[Install]
+WantedBy=multi-user.target
