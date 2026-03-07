@@ -18,7 +18,7 @@ silent: false
 
 
 includes:
-  tasksecrets: ./tasks/secrets.Taskfile.yml
+  file_secrets: ./tasks/secrets.Taskfile.yml
 
 vars:
   ENABLE_OPENBAO_BOOTSTRAP: '{{default "0" .ENABLE_OPENBAO_BOOTSTRAP}}'
@@ -34,8 +34,8 @@ tasks:
     cmds:
       - task: repo:init
       - task: repo:env:init
-      - task: tasksecrets:all
-      - task: tasksecrets:openbao:all
+      - task: file_secrets:all
+      - task: file_secrets:openbao:all
 
 
   repo:init:
@@ -75,28 +75,3 @@ tasks:
         echo "OPENBAO_ADDR=${OPENBAO_ADDR:-}"
         echo "OPENBAO_CACERT=${OPENBAO_CACERT:-}"
 
-  openbao:bootstrap:
-    desc: Run the optional OpenBao bootstrap sequence when enabled
-    cmds:
-      - |
-        set -eu
-        if [ "{{.ENABLE_OPENBAO_BOOTSTRAP}}" != "1" ]; then
-          echo "Skipping OpenBao bootstrap because ENABLE_OPENBAO_BOOTSTRAP is not set to 1"
-          exit 0
-        fi
-        task secrets:openbao:all
-
-  secrets:bootstrap:
-    desc: Run the standard secrets bootstrap sequence
-    cmds:
-      - task: tasksecrets:secrets:all
-
-  openbao:
-    desc: Run the optional OpenBao bootstrap sequence
-    cmds:
-      - task: tasksecrets:openbao:bootstrap
-
-  secrets:
-    desc: List available namespaced secrets tasks
-    cmds:
-      - task --list
