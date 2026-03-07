@@ -30,3 +30,8 @@ ENABLE_OPENBAO_BOOTSTRAP=1 task all
 - Local runtime data and secrets live under `state/`.
 - The `state/` directory is ignored by Git and must not be committed.
 - An example local environment file is stored at `config/examples/state.env.example`.
+
+
+## OpenBao TLS
+
+The repository can generate a machine-local CA and OpenBao server certificate under `state/secrets/openbao/tls/`. The active OpenBao CA path is written to `state/configs/.env` as `OPENBAO_CACERT`.

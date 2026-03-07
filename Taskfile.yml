@@ -9,10 +9,12 @@
 #   - This Taskfile provides a single entry point for ordered execution.
 #   - Subsidiary Taskfiles are included under namespaces.
 #   - The default all task runs safe, repeatable bootstrap steps first.
-#   - OpenBao bootstrap is optional and only runs when explicitly enabled.
+#   - OpenBao bootstrap stays optional and only runs when the endpoint is configured.
 # ################################################################
 
 version: '3'
+
+dotenv: ['state/configs/.env']
 
 silent: false
 
@@ -33,6 +35,7 @@ tasks:
     cmds:
       - task: repo:init
       - task: repo:env:init
+      - task: repo:env:openbao:init
       - task: file_secrets:all
       - |
         bash -eu -c '
@@ -44,24 +47,25 @@ tasks:
             ENABLE_OPENBAO_BOOTSTRAP=1
           fi
 
-          if [ "$ENABLE_OPENBAO_BOOTSTRAP" = "1" ]; then
-            if [ -z "${OPENBAO_ADDR:-}" ]; then
-              echo "OpenBao bootstrap required but OPENBAO_ADDR is not set" >&2
-              exit 1
-            fi
-            echo "OpenBao status file not found, running OpenBao bootstrap tasks"
-            task file_secrets:openbao:all
-          else
-            echo "OpenBao status file found, skipping OpenBao bootstrap tasks"
+        if [ "${ENABLE_OPENBAO_BOOTSTRAP:-0}" = "1" ] || [ -n "${OPENBAO_ADDR:-}" ]; then
+          if [ -z "${OPENBAO_ADDR:-}" ]; then
+            echo "OpenBao bootstrap requested but OPENBAO_ADDR is not set" >&2
+            exit 1
           fi
-        '
+          echo "OpenBao status file not found, running OpenBao bootstrap tasks"
+          task file_secrets:openbao:all
+          exit 0
+        fi
+
+        echo "OpenBao not yet configured, skipping OpenBao bootstrap tasks"
+        SCRIPT
 
   repo:init:
     desc: Prepare repository-local directories and safe defaults
     cmds:
       - |
         set -eu
-        mkdir -p state/configs tasks
+        mkdir -p state/configs tasks config/examples docs/reference
         mkdir -p state
         chmod 700 state || true
         echo "Repository bootstrap directories are ready"
@@ -71,7 +75,7 @@ tasks:
     cmds:
       - |
         set -eu
-        mkdir -p state/configs
+        mkdir -p state/configs config/examples
         if [ ! -f state/configs/.env ] && [ -f config/examples/state.env.example ]; then
           cp config/examples/state.env.example state/configs/.env
           chmod 600 state/configs/.env
@@ -84,11 +88,84 @@ tasks:
           fi
         fi
 
+  repo:env:openbao:init:
+    desc: Derive OpenBao endpoint defaults and persist them when missing
+    cmds:
+      - |
+        bash <<'SCRIPT'
+        set -eu
+        env_file="state/configs/.env"
+        example_file="config/examples/state.env.example"
+        default_cacert="state/secrets/openbao/tls/ca/ca.pem"
+
+        mkdir -p "$(dirname "$env_file")" "$(dirname "$example_file")"
+        touch "$env_file" "$example_file"
+
+        set -a
+        . "$env_file"
+        set +a
+
+        detect_ip() {
+          ip_value="$(hostname -I 2>/dev/null | awk '{print $1}')"
+          if [ -n "$ip_value" ]; then
+            printf '%s\n' "$ip_value"
+            return 0
+          fi
+          ip route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}'
+        }
+
+        update_key() {
+          target_file="$1"
+          key="$2"
+          value="$3"
+          tmp_file="$(mktemp)"
+
+          if [ -f "$target_file" ] && grep -q "^${key}=" "$target_file"; then
+            awk -v key="$key" -v value="$value" '
+              BEGIN { replaced = 0 }
+              $0 ~ "^" key "=" { print key "=" value; replaced = 1; next }
+              { print }
+              END { if (replaced == 0) print key "=" value }
+            ' "$target_file" > "$tmp_file"
+          else
+            cat "$target_file" > "$tmp_file"
+            printf '%s=%s\n' "$key" "$value" >> "$tmp_file"
+          fi
+
+          mv "$tmp_file" "$target_file"
+        }
+
+        if [ -z "${OPENBAO_ADDR:-}" ]; then
+          current_ip="$(detect_ip)"
+          if [ -n "$current_ip" ]; then
+            OPENBAO_ADDR="https://${current_ip}:8200"
+          fi
+        fi
+
+        if [ -z "${OPENBAO_CACERT:-}" ]; then
+          OPENBAO_CACERT="$default_cacert"
+        fi
+
+        if [ -n "${OPENBAO_ADDR:-}" ]; then
+          update_key "$env_file" "OPENBAO_ADDR" "$OPENBAO_ADDR"
+          update_key "$example_file" "OPENBAO_ADDR" "$OPENBAO_ADDR"
+        fi
+        update_key "$env_file" "OPENBAO_CACERT" "$OPENBAO_CACERT"
+        update_key "$example_file" "OPENBAO_CACERT" "$OPENBAO_CACERT"
+        chmod 600 "$env_file"
+
+        echo "Persisted OpenBao environment values to $env_file and $example_file"
+        echo "OPENBAO_ADDR=${OPENBAO_ADDR:-}"
+        echo "OPENBAO_CACERT=${OPENBAO_CACERT:-}"
+        SCRIPT
+
   repo:check:
     desc: Show the effective bootstrap configuration
     cmds:
       - |
+        bash <<'SCRIPT'
         set -eu
-        echo "ENABLE_OPENBAO_BOOTSTRAP={{.ENABLE_OPENBAO_BOOTSTRAP}}"
+        echo "ENABLE_OPENBAO_BOOTSTRAP=${ENABLE_OPENBAO_BOOTSTRAP:-0}"
         echo "OPENBAO_ADDR=${OPENBAO_ADDR:-}"
         echo "OPENBAO_CACERT=${OPENBAO_CACERT:-}"
+        SCRIPT
