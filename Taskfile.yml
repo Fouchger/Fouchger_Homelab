@@ -35,7 +35,7 @@ tasks:
       - task: repo:init
       - task: repo:env:init
       - task: tasksecrets:all
-      # - task: tasksecrets:openbao:all
+      - task: tasksecrets:openbao:all
 
 
   repo:init:
