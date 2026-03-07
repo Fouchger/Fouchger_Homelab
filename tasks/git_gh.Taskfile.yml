@@ -25,7 +25,7 @@ silent: false
 vars:
   APT_GET: "apt-get"
   GH_HOST: "github.com"
-  USE_PROXMOX_SCRIPT: 1
+  USE_PROXMOX_SCRIPT: '{{.USE_PROXMOX_SCRIPT | default "1"}}'
 
 tasks:
   bootstrap:
@@ -227,6 +227,12 @@ tasks:
     cmds:
       - |
         set -euo pipefail
+
+        if command -v code-server >/dev/null 2>&1; then
+          echo 'Code Server is already installed.'
+          exit 0
+        fi
+
         if [ '{{.USE_PROXMOX_SCRIPT}}' = '1' ]; then
           echo 'Installing code-server using the community Proxmox helper script'
           bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
@@ -234,5 +240,3 @@ tasks:
           echo 'Installing code-server using the official installer'
           curl -fsSL https://code-server.dev/install.sh | sh
         fi
-    status:
-      - command -v code-server >/dev/null 2>&1
