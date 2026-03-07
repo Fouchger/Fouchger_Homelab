@@ -26,3 +26,5 @@ __pycache__/
 # Optional local env files outside SOPS control
 .env.local
 .envrc.local
+config/examples/state.env.example
+.sops.yaml
