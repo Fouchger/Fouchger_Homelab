@@ -25,6 +25,7 @@ silent: false
 vars:
   APT_GET: "apt-get"
   GH_HOST: "github.com"
+  USE_PROXMOX_SCRIPT: 1
 
 tasks:
   bootstrap:
@@ -222,9 +223,16 @@ tasks:
         fi
 
   code-server:
-    desc: Install code-server (VS Code in the browser) if not installed, using the official script from community-scripts/ProxmoxVE
+    desc: Install code-server using the Proxmox helper script or the official installer
     cmds:
-      - bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
-
+      - |
+        set -euo pipefail
+        if [ '{{.USE_PROXMOX_SCRIPT}}' = '1' ]; then
+          echo 'Installing code-server using the community Proxmox helper script'
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
+        else
+          echo 'Installing code-server using the official installer'
+          curl -fsSL https://code-server.dev/install.sh | sh
+        fi
     status:
       - command -v code-server >/dev/null 2>&1

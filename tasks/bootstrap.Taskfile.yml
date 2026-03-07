@@ -1,0 +1,237 @@
+# ###########################################################################
+# File: tasks/bootstrap.Taskfile.yml
+# Purpose:
+#   Host bootstrap Taskfile for Fouchger homelab systems.
+#
+# Scope:
+#   - System package upgrade with apt lock handling
+#   - Python and pipx bootstrap for isolated CLI tooling
+#   - Ansible installation via pipx
+#   - Terraform and Packer installation via the HashiCorp apt repository
+#   - code-server installation for browser-based administration
+#
+# Notes:
+#   - Designed for Debian/Ubuntu class systems where apt-get is available.
+#   - Tasks are sequenced deliberately where apt operations are involved to
+#     avoid lock contention from parallel dependency execution.
+#   - HashiCorp repository assets are stored under /etc/apt/keyrings following
+#     current Debian/Ubuntu guidance.
+#   - code-server defaults to the community Proxmox helper script when
+#     USE_PROXMOX_SCRIPT=1. Otherwise it falls back to the official installer.
+#   - This Taskfile is intended to be included by the repository root Taskfile.
+# ###########################################################################
+
+version: '3'
+
+silent: false
+
+vars:
+  APT_GET: 'apt-get'
+  SUDO: '{{.SUDO | default "sudo"}}'
+  DEBIAN_FRONTEND: 'noninteractive'
+  APT_LOCK_TIMEOUT: '{{.APT_LOCK_TIMEOUT | default "600"}}'
+  APT_LOCK_SLEEP: '{{.APT_LOCK_SLEEP | default "3"}}'
+  HASHICORP_KEYRING: '/etc/apt/keyrings/hashicorp-archive-keyring.gpg'
+  HASHICORP_LIST: '/etc/apt/sources.list.d/hashicorp.list'
+  USE_PROXMOX_SCRIPT: '{{.USE_PROXMOX_SCRIPT | default "1"}}'
+
+env:
+  DEBIAN_FRONTEND: '{{.DEBIAN_FRONTEND}}'
+
+tasks:
+  default:
+    desc: Show available bootstrap tasks
+    cmds:
+      - task --taskfile {{.TASKFILE}} --list
+
+  all:
+    desc: Run the full host bootstrap sequence
+    cmds:
+      - task: upgrade
+      - task: python3
+      - task: pipx
+      - task: ansible
+      - task: terraform
+      - task: packer
+      - task: code-server
+
+  bootstrap:
+    desc: Alias for the full host bootstrap sequence
+    cmds:
+      - task: all
+
+  upgrade:
+    desc: Upgrade the system package set and clean residual packages
+    cmds:
+      - task: apt:update
+      - task: apt:run
+        vars:
+          ARGS: 'full-upgrade -y'
+      - task: apt:run
+        vars:
+          ARGS: 'autoremove -y'
+      - task: apt:run
+        vars:
+          ARGS: 'autoclean -y'
+
+  python3:
+    desc: Install Python 3 runtime and packaging prerequisites for pipx
+    cmds:
+      - task: apt:update
+      - task: apt:install
+        vars:
+          PKGS: 'python3 python3-venv python3-pip'
+    status:
+      - command -v python3 >/dev/null 2>&1
+
+  pipx:
+    desc: Install pipx and ensure the current user path is updated
+    cmds:
+      - task: python3
+      - task: apt:update
+      - task: apt:install
+        vars:
+          PKGS: 'pipx'
+      - pipx ensurepath || true
+      - python3 -m pipx ensurepath || true
+    status:
+      - command -v pipx >/dev/null 2>&1
+
+  ansible:
+    desc: Install or upgrade Ansible in an isolated pipx environment
+    cmds:
+      - task: pipx
+      - |
+        set -euo pipefail
+        if pipx list --short 2>/dev/null | grep -qx 'ansible'; then
+          pipx upgrade ansible
+        else
+          pipx install --include-deps ansible
+        fi
+      - |
+        set -euo pipefail
+        if ! pipx list --include-injected 2>/dev/null | grep -q 'argcomplete'; then
+          pipx inject --include-apps ansible argcomplete
+        fi
+    status:
+      - command -v ansible >/dev/null 2>&1
+      - ansible --version >/dev/null 2>&1
+
+  hashicorp-repo:
+    desc: Configure the HashiCorp apt repository for Terraform and Packer
+    cmds:
+      - task: apt:update
+      - task: apt:install
+        vars:
+          PKGS: 'ca-certificates curl gnupg lsb-release'
+      - '{{.SUDO}} install -m 0755 -d /etc/apt/keyrings'
+      - |
+        set -euo pipefail
+        if [ ! -f '{{.HASHICORP_KEYRING}}' ]; then
+          curl -fsSL --proto '=https' --tlsv1.2 https://apt.releases.hashicorp.com/gpg \
+            | {{.SUDO}} gpg --dearmor -o '{{.HASHICORP_KEYRING}}'
+        fi
+        {{.SUDO}} chmod a+r '{{.HASHICORP_KEYRING}}'
+      - |
+        set -euo pipefail
+        codename="$({{.SUDO}} lsb_release -cs)"
+        repo_line="deb [signed-by={{.HASHICORP_KEYRING}}] https://apt.releases.hashicorp.com ${codename} main"
+        current_line=""
+        if [ -f '{{.HASHICORP_LIST}}' ]; then
+          current_line="$(cat '{{.HASHICORP_LIST}}' 2>/dev/null || true)"
+        fi
+        if [ "${current_line}" != "${repo_line}" ]; then
+          printf '%s\n' "${repo_line}" | {{.SUDO}} tee '{{.HASHICORP_LIST}}' >/dev/null
+        fi
+      - task: apt:update
+    status:
+      - test -f '{{.HASHICORP_LIST}}'
+
+  terraform:
+    desc: Install Terraform from the HashiCorp apt repository
+    cmds:
+      - task: hashicorp-repo
+      - task: apt:install
+        vars:
+          PKGS: 'terraform'
+      - terraform version
+    status:
+      - command -v terraform >/dev/null 2>&1
+
+  packer:
+    desc: Install Packer from the HashiCorp apt repository
+    cmds:
+      - task: hashicorp-repo
+      - task: apt:install
+        vars:
+          PKGS: 'packer'
+      - packer version
+    status:
+      - command -v packer >/dev/null 2>&1
+
+  apt:wait:
+    desc: Wait until apt and dpkg locks are released
+    cmds:
+      - |
+        set -euo pipefail
+
+        timeout='{{.APT_LOCK_TIMEOUT}}'
+        sleep_s='{{.APT_LOCK_SLEEP}}'
+        start="$(date +%s)"
+
+        locks=(
+          /var/lib/apt/lists/lock
+          /var/lib/dpkg/lock
+          /var/lib/dpkg/lock-frontend
+          /var/cache/apt/archives/lock
+        )
+
+        while true; do
+          if {{.SUDO}} fuser "${locks[@]}" >/dev/null 2>&1; then
+            now="$(date +%s)"
+            if [ $((now - start)) -ge "${timeout}" ]; then
+              echo "Timed out after ${timeout}s waiting for apt or dpkg locks."
+              echo 'Active lock holders, if any:'
+              {{.SUDO}} fuser -v "${locks[@]}" || true
+              exit 1
+            fi
+            echo "apt or dpkg is busy. Waiting ${sleep_s}s..."
+            sleep "${sleep_s}"
+            continue
+          fi
+          break
+        done
+
+  apt:run:
+    desc: Run apt-get with lock handling by passing ARGS="..."
+    vars:
+      ARGS: '{{.ARGS | default ""}}'
+    cmds:
+      - task: apt:wait
+      - |
+        set -euo pipefail
+        if [ -z '{{.ARGS}}' ]; then
+          echo 'Missing ARGS. Example: task bootstrap:apt:run -- ARGS="update -y"'
+          exit 1
+        fi
+        {{.SUDO}} {{.APT_GET}} {{.ARGS}}
+
+  apt:update:
+    desc: Run apt-get update with lock handling
+    cmds:
+      - task: apt:wait
+      - '{{.SUDO}} {{.APT_GET}} update -y'
+
+  apt:install:
+    desc: Run apt-get install with lock handling by passing PKGS="..."
+    vars:
+      PKGS: '{{.PKGS | default ""}}'
+    cmds:
+      - task: apt:wait
+      - |
+        set -euo pipefail
+        if [ -z '{{.PKGS}}' ]; then
+          echo 'Missing PKGS. Example: task bootstrap:apt:install -- PKGS="curl ca-certificates"'
+          exit 1
+        fi
+        {{.SUDO}} {{.APT_GET}} install -y {{.PKGS}}

@@ -2,9 +2,12 @@
 # File: Taskfile.yml
 # Purpose:
 #   Root Taskfile entry point for the homelab repository.
+#
 # Notes:
-#   - Includes the reusable secrets task set.
-#   - Extend this file with additional domain Taskfiles over time.
+#   - Includes the reusable secrets, GitHub, and host bootstrap task sets.
+#   - Host bootstrap tasks are included without flattening to avoid task-name
+#     collisions with existing repository workflows.
+#   - Root alias tasks are provided for the most common bootstrap operations.
 # ================================================================
 
 version: '3'
@@ -17,12 +20,14 @@ includes:
     flatten: true
   git_gh:
     taskfile: ./tasks/git_gh.Taskfile.yml
-    flatten: true  
-
+    flatten: true
+  bootstrap_tasks:
+    taskfile: ./tasks/bootstrap.Taskfile.yml
+    flatten: false
 
 tasks:
   all:
-    desc: Run the standard homelab bootstrap tasks
+    desc: Run the standard homelab secrets bootstrap tasks
     cmds:
       - task: init
       - task: tools:check
@@ -39,7 +44,7 @@ tasks:
       - task: report
 
   dev_setup:
-    desc: Install git + gh (if needed), authenticate gh (Fine-grained PAT), and set up git auth via gh
+    desc: Install git and gh, authenticate gh, configure Git auth, and install code-server
     cmds:
       - task: install
       - task: auth
