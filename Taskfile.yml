@@ -9,6 +9,8 @@
 
 version: '3'
 
+silent: true
+
 includes:
   secrets:
     taskfile: ./tasks/secrets.Taskfile.yml
@@ -25,7 +27,7 @@ tasks:
       - task: init
       - task: tools:check
       - task: sops:bootstrap
-      - task: openbao:config:render
+      - task: openbao:prepare:runtime
 
   day1:
     desc: Complete day-1 secrets bootstrap for the homelab
@@ -41,5 +43,5 @@ tasks:
     cmds:
       - task: install
       - task: auth
-      - task code-server
+      - task: code-server
       
