@@ -1,19 +1,28 @@
-# ################################################################
+# ================================================================
 # File: .gitignore
-# Created: 2026/03/07
-# Updated: 2026/03/07
-# Description:
-#   Git ignore rules for local runtime, secret, and generated artefacts.
+# Purpose:
+#   Ignore transient plaintext and local runtime artefacts.
 # Notes:
-#   - The state directory contains local-only data and must never be committed.
-#   - Encrypted secrets still live under state/ by design, so they are also local-only.
-# ################################################################
+#   - Encrypted artefacts under state/secrets/ should be committed only
+#     where appropriate for your repo policy.
+#   - Plaintext bootstrap outputs, tokens, and keys should not be committed.
+# ================================================================
 
-# Local runtime and secrets
+# Temporary plaintext working files
+state/secrets/.tmp/
+
+# State files
 state/
 
-# Common editor and OS noise
+# Local editor and OS noise
 .DS_Store
-Thumbs.db
 *.swp
 *.swo
+
+# Python cache if helper scripts are added later
+__pycache__/
+*.pyc
+
+# Optional local env files outside SOPS control
+.env.local
+.envrc.local
