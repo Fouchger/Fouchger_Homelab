@@ -32,6 +32,7 @@ tasks:
     cmds:
       - task: install
       - task: auth
+      - task: code-server
 
   install:
     desc: Install git and gh if missing (Debian/Ubuntu via apt)
@@ -219,3 +220,11 @@ tasks:
         if command -v gh >/dev/null 2>&1; then
           gh auth status -h {{.GH_HOST}} || true
         fi
+
+  code-server:
+    desc: Install code-server (VS Code in the browser) if not installed, using the official script from community-scripts/ProxmoxVE
+    cmds:
+      - bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
+
+    status:
+      - command -v code-server >/dev/null 2>&1
