@@ -18,9 +18,7 @@ silent: false
 
 
 includes:
-  secrets:
-    taskfile: ./tasks/secrets.Taskfile.yml
-    dir: .
+  tasksecrets: ./tasks/secrets.Taskfile.yml
 
 vars:
   ENABLE_OPENBAO_BOOTSTRAP: '{{default "0" .ENABLE_OPENBAO_BOOTSTRAP}}'
@@ -36,8 +34,9 @@ tasks:
     cmds:
       - task: repo:init
       - task: repo:env:init
-      - task: secrets:all
-      - task: openbao:all
+      - task: tasksecrets:all
+      # - task: tasksecrets:openbao:all
+
 
   repo:init:
     desc: Prepare repository-local directories and safe defaults
@@ -60,7 +59,11 @@ tasks:
           chmod 600 state/configs/.env
           echo "Created state/configs/.env from example defaults"
         else
-          echo "Local environment file already present or no example file was found"
+          if [ ! -f config/examples/state.env.example ]; then
+            echo "No example file was found"
+          else  
+            echo "Local environment file already present"
+          fi
         fi
 
   repo:check:
@@ -72,7 +75,7 @@ tasks:
         echo "OPENBAO_ADDR=${OPENBAO_ADDR:-}"
         echo "OPENBAO_CACERT=${OPENBAO_CACERT:-}"
 
-  openbao:all:
+  openbao:bootstrap:
     desc: Run the optional OpenBao bootstrap sequence when enabled
     cmds:
       - |
@@ -83,7 +86,17 @@ tasks:
         fi
         task secrets:openbao:all
 
-  secrets:
+  secrets:bootstrap:
     desc: Run the standard secrets bootstrap sequence
     cmds:
-      - task: secrets:all
+      - task: tasksecrets:secrets:all
+
+  openbao:
+    desc: Run the optional OpenBao bootstrap sequence
+    cmds:
+      - task: tasksecrets:openbao:bootstrap
+
+  secrets:
+    desc: List available namespaced secrets tasks
+    cmds:
+      - task --list
