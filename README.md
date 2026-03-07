@@ -1,5 +1,11 @@
 # Fouchger Homelab
 
+## Install
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fouchger/Fouchger_Homelab/refs/heads/branch1/install.sh)"
+```
+
 ## Bootstrap
 Run the standard bootstrap flow:
 
