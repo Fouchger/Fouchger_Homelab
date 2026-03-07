@@ -16,7 +16,6 @@ version: '3'
 
 silent: false
 
-
 includes:
   file_secrets: ./tasks/secrets.Taskfile.yml
 
@@ -35,8 +34,27 @@ tasks:
       - task: repo:init
       - task: repo:env:init
       - task: file_secrets:all
-      - task: file_secrets:openbao:all
+      - |
+        bash -eu -c '
+          openbao_status_file="state/secrets/openbao/rendered/status.json"
 
+          if [ -f "$openbao_status_file" ]; then
+            ENABLE_OPENBAO_BOOTSTRAP=0
+          else
+            ENABLE_OPENBAO_BOOTSTRAP=1
+          fi
+
+          if [ "$ENABLE_OPENBAO_BOOTSTRAP" = "1" ]; then
+            if [ -z "${OPENBAO_ADDR:-}" ]; then
+              echo "OpenBao bootstrap required but OPENBAO_ADDR is not set" >&2
+              exit 1
+            fi
+            echo "OpenBao status file not found, running OpenBao bootstrap tasks"
+            task file_secrets:openbao:all
+          else
+            echo "OpenBao status file found, skipping OpenBao bootstrap tasks"
+          fi
+        '
 
   repo:init:
     desc: Prepare repository-local directories and safe defaults
@@ -44,9 +62,9 @@ tasks:
       - |
         set -eu
         mkdir -p state/configs tasks
+        mkdir -p state
         chmod 700 state || true
         echo "Repository bootstrap directories are ready"
-
 
   repo:env:init:
     desc: Create a local environment file from the example when missing
@@ -61,7 +79,7 @@ tasks:
         else
           if [ ! -f config/examples/state.env.example ]; then
             echo "No example file was found"
-          else  
+          else
             echo "Local environment file already present"
           fi
         fi
@@ -74,4 +92,3 @@ tasks:
         echo "ENABLE_OPENBAO_BOOTSTRAP={{.ENABLE_OPENBAO_BOOTSTRAP}}"
         echo "OPENBAO_ADDR=${OPENBAO_ADDR:-}"
         echo "OPENBAO_CACERT=${OPENBAO_CACERT:-}"
-
