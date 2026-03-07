@@ -1,0 +1,89 @@
+# ################################################################
+# File: Taskfile.yml
+# Created: 2026/03/07
+# Updated: 2026/03/07
+# Description:
+#   Root task orchestration for the homelab repository.
+#
+# Notes:
+#   - This Taskfile provides a single entry point for ordered execution.
+#   - Subsidiary Taskfiles are included under namespaces.
+#   - The default all task runs safe, repeatable bootstrap steps first.
+#   - OpenBao bootstrap is optional and only runs when explicitly enabled.
+# ################################################################
+
+version: '3'
+
+silent: false
+
+
+includes:
+  secrets:
+    taskfile: ./tasks/secrets.Taskfile.yml
+    dir: .
+
+vars:
+  ENABLE_OPENBAO_BOOTSTRAP: '{{default "0" .ENABLE_OPENBAO_BOOTSTRAP}}'
+
+tasks:
+  default:
+    desc: Run the standard homelab bootstrap sequence
+    cmds:
+      - task: all
+
+  all:
+    desc: Run all standard bootstrap tasks in the correct order
+    cmds:
+      - task: repo:init
+      - task: repo:env:init
+      - task: secrets:all
+      - task: openbao:all
+
+  repo:init:
+    desc: Prepare repository-local directories and safe defaults
+    cmds:
+      - |
+        set -eu
+        mkdir -p state/configs tasks
+        chmod 700 state || true
+        echo "Repository bootstrap directories are ready"
+
+
+  repo:env:init:
+    desc: Create a local environment file from the example when missing
+    cmds:
+      - |
+        set -eu
+        mkdir -p state/configs
+        if [ ! -f state/configs/.env ] && [ -f config/examples/state.env.example ]; then
+          cp config/examples/state.env.example state/configs/.env
+          chmod 600 state/configs/.env
+          echo "Created state/configs/.env from example defaults"
+        else
+          echo "Local environment file already present or no example file was found"
+        fi
+
+  repo:check:
+    desc: Show the effective bootstrap configuration
+    cmds:
+      - |
+        set -eu
+        echo "ENABLE_OPENBAO_BOOTSTRAP={{.ENABLE_OPENBAO_BOOTSTRAP}}"
+        echo "OPENBAO_ADDR=${OPENBAO_ADDR:-}"
+        echo "OPENBAO_CACERT=${OPENBAO_CACERT:-}"
+
+  openbao:all:
+    desc: Run the optional OpenBao bootstrap sequence when enabled
+    cmds:
+      - |
+        set -eu
+        if [ "{{.ENABLE_OPENBAO_BOOTSTRAP}}" != "1" ]; then
+          echo "Skipping OpenBao bootstrap because ENABLE_OPENBAO_BOOTSTRAP is not set to 1"
+          exit 0
+        fi
+        task secrets:openbao:all
+
+  secrets:
+    desc: Run the standard secrets bootstrap sequence
+    cmds:
+      - task: secrets:all
