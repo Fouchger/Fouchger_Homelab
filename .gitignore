@@ -27,4 +27,3 @@ __pycache__/
 .env.local
 .envrc.local
 config/examples/state.env.example
-.sops.yaml

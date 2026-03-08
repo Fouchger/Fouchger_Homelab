@@ -45,7 +45,7 @@ vars:
 
   DEFAULT_PROXMOX_HOST: '{{.DEFAULT_PROXMOX_HOST | default "192.168.88.250"}}'
   DEFAULT_PROXMOX_SSH_USER: '{{.DEFAULT_PROXMOX_SSH_USER | default "root"}}'
-  DEFAULT_PVE_REALM: '{{.DEFAULT_PVE_REALM | default "pam"}}'
+  DEFAULT_PVE_REALM: '{{.DEFAULT_PVE_REALM | default "pve"}}'
 
   PVE_USER_NAME: '{{.PVE_USER_NAME | default "automation"}}'
   PVE_ROLE_NAME: '{{.PVE_ROLE_NAME | default "AutomationRole"}}'
@@ -146,7 +146,9 @@ tasks:
             printf "'"
           }
 
-          umask 077
+          tmp_remote_script="$(mktemp)"
+          trap 'rm -f "${tmp_remote_script}"' EXIT
+
           {
             printf '%s\n' '#!/usr/bin/env bash'
             printf '%s\n' 'set -euo pipefail'
@@ -191,8 +193,10 @@ tasks:
             printf '%s\n' 'fi'
             printf '\n'
             printf '%s\n' 'pveum user token add "${PVE_USERID}" "${PVE_TOKEN_ID}" --privsep 0 --output-format json'
-          } > "${remote_script}"
-          chmod 600 "${remote_script}"
+          } > "${tmp_remote_script}"
+
+          install -m 600 "${tmp_remote_script}" "${remote_script}"
+          rm -f "${tmp_remote_script}"
 
           echo "Reconciling Proxmox automation identity on ${PROXMOX_HOST}..."
           token_json="$({
@@ -206,6 +210,7 @@ tasks:
           })"
 
           rm -f "${remote_script}"
+          trap - EXIT
 
           token_value="$(printf '%s\n' "${token_json}" | jq -r '.value // empty')"
           full_token="${pve_user}@${PVE_REALM}!${pve_token_id}=${token_value}"
@@ -269,7 +274,12 @@ tasks:
             }' > "${tmp_token_json}"
 
           if [ -f '{{.SOPS_CONFIG_FILE}}' ] && [ -f '{{.AGE_KEYS_FILE}}' ] && command -v sops >/dev/null 2>&1; then
-            SOPS_AGE_KEY_FILE='{{.AGE_KEYS_FILE}}' sops --encrypt --input-type json --output-type json "${tmp_token_json}" > "${token_enc_file}"
+            SOPS_AGE_KEY_FILE='{{.AGE_KEYS_FILE}}' \
+              sops --encrypt \
+                --filename-override "${token_enc_file}" \
+                --input-type json \
+                --output-type json \
+                /dev/stdin < "${tmp_token_json}" > "${token_enc_file}"
             chmod 600 "${token_enc_file}"
             echo "Wrote encrypted token snapshot: ${token_enc_file}"
           else
