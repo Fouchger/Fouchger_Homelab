@@ -21,6 +21,9 @@ includes:
   git_gh:
     taskfile: ./tasks/git_gh.Taskfile.yml
     flatten: true
+  proxmox:
+    taskfile: ./tasks/proxmox.Taskfile.yml
+    flatten: true
   bootstrap_tasks:
     taskfile: ./tasks/bootstrap.Taskfile.yml
     flatten: false
@@ -42,6 +45,8 @@ tasks:
       - task: sops:bootstrap
       - task: openbao:bootstrap:standalone
       - task: report
+      - task: ssh:keys
+
 
   dev_setup:
     desc: Install git and gh, authenticate gh, configure Git auth, and install code-server
@@ -49,4 +54,9 @@ tasks:
       - task: install
       - task: auth
       - task: code-server
+
+  proxmox_bootstrap:
+    desc: Bootstrap the Proxmox automation user, ACL, and API token
+    cmds:
+      - task: proxmox:api-user
       

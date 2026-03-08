@@ -1,0 +1,457 @@
+# ================================================================
+# File: tasks/proxmox.Taskfile.yml
+# Purpose:
+#   Proxmox bootstrap tasks for creating the homelab automation user,
+#   custom role, ACL, and API token from an admin workstation.
+#
+# Notes:
+#   - This workflow runs locally and connects to Proxmox over SSH using the
+#     repo-managed SSH key under state/secrets/ssh.
+#   - Local Proxmox token artefacts are stored only under state/secrets/proxmox.
+#   - A plaintext token env file is written with mode 0600 for local consumer
+#     tooling, and an encrypted JSON snapshot is written when SOPS bootstrap is
+#     already available.
+#   - Remote user, role, ACL, and token objects are reconciled only when the
+#     local token env file is missing, avoiding accidental token churn.
+#   - If the repo SSH key is not yet authorised on the Proxmox host, the task
+#     performs an interactive ssh-copy-id step to seed access.
+#   - Required operator settings are stored in state/configs/.env.
+# ================================================================
+
+version: '3'
+
+silent: false
+
+includes:
+  secrets: ./secrets.Taskfile.yml
+
+vars:
+  ROOT_DIR:
+    sh: pwd
+  CONFIGS_DIR: '{{.ROOT_DIR}}/state/configs'
+  ENV_FILE: '{{.CONFIGS_DIR}}/.env'
+
+  SECRETS_DIR: '{{.ROOT_DIR}}/state/secrets'
+  SSH_DIR: '{{.SECRETS_DIR}}/ssh'
+  PROXMOX_DIR: '{{.SECRETS_DIR}}/proxmox'
+
+  SSH_KEY_NAME: '{{.SSH_KEY_NAME | default "id_ed25519_homelab"}}'
+  SSH_KEY_PATH: '{{.SSH_KEY_PATH | default (printf "%s/%s" .SSH_DIR .SSH_KEY_NAME)}}'
+  SSH_PUB_KEY_PATH: '{{.SSH_PUB_KEY_PATH | default (printf "%s/%s.pub" .SSH_DIR .SSH_KEY_NAME)}}'
+  SSH_KNOWN_HOSTS: '{{.SSH_KNOWN_HOSTS | default (printf "%s/known_hosts" .SSH_DIR)}}'
+
+  TOKEN_ENV_FILE: '{{.TOKEN_ENV_FILE | default (printf "%s/proxmox-api-token.env" .PROXMOX_DIR)}}'
+  TOKEN_ENC_FILE: '{{.TOKEN_ENC_FILE | default (printf "%s/proxmox-api-token.enc.json" .PROXMOX_DIR)}}'
+
+  DEFAULT_PROXMOX_HOST: '{{.DEFAULT_PROXMOX_HOST | default "192.168.88.250"}}'
+  DEFAULT_PROXMOX_SSH_USER: '{{.DEFAULT_PROXMOX_SSH_USER | default "root"}}'
+  DEFAULT_PVE_REALM: '{{.DEFAULT_PVE_REALM | default "pam"}}'
+
+  PVE_USER_NAME: '{{.PVE_USER_NAME | default "automation"}}'
+  PVE_ROLE_NAME: '{{.PVE_ROLE_NAME | default "AutomationRole"}}'
+  PVE_TOKEN_ID: '{{.PVE_TOKEN_ID | default "automation-token"}}'
+  PVE_ROLE_PRIVS: '{{.PVE_ROLE_PRIVS | default "Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Console,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.Cloudinit,VM.Config.CPU,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Migrate,VM.PowerMgmt"}}'
+
+  SOPS_CONFIG_FILE: '{{.ROOT_DIR}}/.sops.yaml'
+  AGE_KEYS_FILE: '{{.SECRETS_DIR}}/age/keys.txt'
+
+tasks:
+  proxmox:api-user:
+    desc: Create or refresh the Proxmox automation user, role, ACL, and API token
+    deps:
+      - secrets:init
+      - secrets:ssh:keys
+      - proxmox:dirs
+      - proxmox:env:ensure
+      - proxmox:tools:check
+    cmds:
+      - task: proxmox:ssh:authorise
+      - |
+          # ############################################################
+          # Task: proxmox:api-user
+          # Description:
+          #   Create or refresh the Proxmox automation identity and persist
+          #   the local token outputs under state/secrets/proxmox.
+          # Notes:
+          #   - Plaintext token env file remains local-only and mode 0600.
+          #   - Encrypted token JSON snapshot is written when SOPS bootstrap
+          #     is already available.
+          # ############################################################
+          set -euo pipefail
+
+          env_file='{{.ENV_FILE}}'
+          token_file='{{.TOKEN_ENV_FILE}}'
+          token_enc_file='{{.TOKEN_ENC_FILE}}'
+          ssh_key='{{.SSH_KEY_PATH}}'
+          known_hosts='{{.SSH_KNOWN_HOSTS}}'
+          remote_script='{{.PROXMOX_DIR}}/.proxmox-bootstrap.sh'
+
+          if [ ! -f "${env_file}" ]; then
+            echo "Required env file not found: ${env_file}"
+            exit 1
+          fi
+
+          # shellcheck disable=SC1090
+          . "${env_file}"
+
+          if [ -z "${PROXMOX_HOST:-}" ] || [ -z "${PROXMOX_SSH_USER:-}" ] || [ -z "${PVE_REALM:-}" ]; then
+            echo "Missing one or more required Proxmox variables in ${env_file}."
+            echo 'Expected: PROXMOX_HOST, PROXMOX_SSH_USER, PVE_REALM'
+            exit 1
+          fi
+
+          if [ -f "${token_file}" ]; then
+            echo "Local token file already exists: ${token_file}"
+            echo 'Skipping remote recreation to avoid unnecessary token churn.'
+            exit 0
+          fi
+
+          pve_user='{{.PVE_USER_NAME}}'
+          pve_role='{{.PVE_ROLE_NAME}}'
+          pve_token_id='{{.PVE_TOKEN_ID}}'
+          pve_privs='{{.PVE_ROLE_PRIVS}}'
+          pve_userid="${pve_user}@${PVE_REALM}"
+
+          add_password='n'
+          echo
+          printf '%s' 'Create or rotate a Proxmox password for this user as well? [y/N]: ' > /dev/tty
+          read -r add_password < /dev/tty || true
+          add_password="$(printf '%s' "${add_password:-n}" | tr '[:upper:]' '[:lower:]')"
+
+          password=''
+          if [ "${add_password}" = 'y' ] || [ "${add_password}" = 'yes' ]; then
+            while true; do
+              printf '%s' "Enter password for ${pve_userid}: " > /dev/tty
+              read -r -s password < /dev/tty
+              echo > /dev/tty
+              printf '%s' "Confirm password for ${pve_userid}: " > /dev/tty
+              read -r -s password_confirm < /dev/tty
+              echo > /dev/tty
+
+              if [ -z "${password}" ]; then
+                echo 'Password cannot be empty when password creation is enabled.'
+                continue
+              fi
+              if [ "${password}" != "${password_confirm}" ]; then
+                echo 'Passwords did not match. Please try again.'
+                continue
+              fi
+              break
+            done
+          fi
+
+          shell_quote() {
+            printf "'"
+            printf '%s' "$1" | sed "s/'/'\\''/g"
+            printf "'"
+          }
+
+          umask 077
+          {
+            printf '%s\n' '#!/usr/bin/env bash'
+            printf '%s\n' 'set -euo pipefail'
+            printf '\n'
+            printf 'PVE_USER_NAME=%s\n' "$(shell_quote "${pve_user}")"
+            printf 'PVE_ROLE_NAME=%s\n' "$(shell_quote "${pve_role}")"
+            printf 'PVE_TOKEN_ID=%s\n' "$(shell_quote "${pve_token_id}")"
+            printf 'PVE_ROLE_PRIVS=%s\n' "$(shell_quote "${pve_privs}")"
+            printf 'PVE_REALM=%s\n' "$(shell_quote "${PVE_REALM}")"
+            printf 'PVE_PASSWORD=%s\n' "$(shell_quote "${password}")"
+            printf '%s\n' 'PVE_USERID="${PVE_USER_NAME}@${PVE_REALM}"'
+            printf '\n'
+            printf '%s\n' 'if ! command -v pveum >/dev/null 2>&1; then'
+            printf '%s\n' "  echo 'pveum is not available on the remote host.' >&2"
+            printf '%s\n' '  exit 1'
+            printf '%s\n' 'fi'
+            printf '\n'
+            printf '%s\n' 'if pveum role list --output-format json | tr -d "[:space:]" | grep -q "\"roleid\":\"${PVE_ROLE_NAME}\""; then'
+            printf '%s\n' '  pveum role modify "${PVE_ROLE_NAME}" -privs "${PVE_ROLE_PRIVS}"'
+            printf '%s\n' 'else'
+            printf '%s\n' '  pveum role add "${PVE_ROLE_NAME}" -privs "${PVE_ROLE_PRIVS}"'
+            printf '%s\n' 'fi'
+            printf '\n'
+            printf '%s\n' 'if pveum user list --output-format json | tr -d "[:space:]" | grep -q "\"userid\":\"${PVE_USERID}\""; then'
+            printf '%s\n' '  if [ -n "${PVE_PASSWORD}" ]; then'
+            printf '%s\n' '    pveum user modify "${PVE_USERID}" -password "${PVE_PASSWORD}"'
+            printf '%s\n' '  fi'
+            printf '%s\n' 'else'
+            printf '%s\n' '  if [ -n "${PVE_PASSWORD}" ]; then'
+            printf '%s\n' '    pveum user add "${PVE_USERID}" -password "${PVE_PASSWORD}"'
+            printf '%s\n' '  else'
+            printf '%s\n' '    pveum user add "${PVE_USERID}"'
+            printf '%s\n' '  fi'
+            printf '%s\n' 'fi'
+            printf '\n'
+            printf '%s\n' 'pveum acl modify / --users "${PVE_USERID}" --roles "${PVE_ROLE_NAME}"'
+            printf '\n'
+            printf '%s\n' 'if pveum user token list "${PVE_USERID}" --output-format json >/dev/null 2>&1; then'
+            printf '%s\n' '  if pveum user token list "${PVE_USERID}" --output-format json | tr -d "[:space:]" | grep -q "\"tokenid\":\"${PVE_TOKEN_ID}\""; then'
+            printf '%s\n' '    pveum user token remove "${PVE_USERID}" "${PVE_TOKEN_ID}"'
+            printf '%s\n' '  fi'
+            printf '%s\n' 'fi'
+            printf '\n'
+            printf '%s\n' 'pveum user token add "${PVE_USERID}" "${PVE_TOKEN_ID}" --privsep 0 --output-format json'
+          } > "${remote_script}"
+          chmod 600 "${remote_script}"
+
+          echo "Reconciling Proxmox automation identity on ${PROXMOX_HOST}..."
+          token_json="$({
+            ssh \
+              -i "${ssh_key}" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile="${known_hosts}" \
+              "${PROXMOX_SSH_USER}@${PROXMOX_HOST}" \
+              'bash -s' < "${remote_script}"
+          })"
+
+          rm -f "${remote_script}"
+
+          token_value="$(printf '%s\n' "${token_json}" | jq -r '.value // empty')"
+          full_token="${pve_user}@${PVE_REALM}!${pve_token_id}=${token_value}"
+
+          if [ -z "${token_value}" ]; then
+            echo 'Failed to capture the Proxmox token value from command output.'
+            printf '%s\n' "${token_json}"
+            exit 1
+          fi
+
+          tmp_token_file="$(mktemp)"
+          tmp_token_json="$(mktemp)"
+          trap 'rm -f "${tmp_token_file}" "${tmp_token_json}"' EXIT
+
+          {
+            printf '%s\n' '# ================================================================'
+            printf '%s\n' '# File: state/secrets/proxmox/proxmox-api-token.env'
+            printf '%s\n' '# Purpose:'
+            printf '%s\n' '#   Local Proxmox API token for homelab automation consumers.'
+            printf '%s\n' '# Notes:'
+            printf '%s\n' '#   - Generated by task proxmox:api-user.'
+            printf '%s\n' '#   - Keep this file on the admin workstation only.'
+            printf '%s\n' '#   - Source this file from Terraform, Ansible, or wrapper scripts.'
+            printf '%s\n' '# ================================================================'
+            printf 'PVE_USER_NAME=%s\n' "${pve_user}"
+            printf 'PVE_ROLE_NAME=%s\n' "${pve_role}"
+            printf 'PVE_TOKEN_ID=%s\n' "${pve_token_id}"
+            printf 'PVE_REALM=%s\n' "${PVE_REALM}"
+            printf 'PROXMOX_HOST=%s\n' "${PROXMOX_HOST}"
+            printf 'PROXMOX_SSH_USER=%s\n' "${PROXMOX_SSH_USER}"
+            printf 'PROXMOX_API_USER=%s\n' "${pve_user}@${PVE_REALM}"
+            printf 'PROXMOX_API_TOKEN_NAME=%s\n' "${pve_user}@${PVE_REALM}!${pve_token_id}"
+            printf 'PROXMOX_API_TOKEN_VALUE=%s\n' "${token_value}"
+            printf 'PROXMOX_API_TOKEN=%s\n' "${full_token}"
+          } > "${tmp_token_file}"
+
+          install -m 600 "${tmp_token_file}" "${token_file}"
+
+          jq -n \
+            --arg pve_user_name "${pve_user}" \
+            --arg pve_role_name "${pve_role}" \
+            --arg pve_token_id "${pve_token_id}" \
+            --arg pve_realm "${PVE_REALM}" \
+            --arg proxmox_host "${PROXMOX_HOST}" \
+            --arg proxmox_ssh_user "${PROXMOX_SSH_USER}" \
+            --arg proxmox_api_user "${pve_user}@${PVE_REALM}" \
+            --arg proxmox_api_token_name "${pve_user}@${PVE_REALM}!${pve_token_id}" \
+            --arg proxmox_api_token_value "${token_value}" \
+            --arg proxmox_api_token "${full_token}" \
+            '{
+              pve_user_name: $pve_user_name,
+              pve_role_name: $pve_role_name,
+              pve_token_id: $pve_token_id,
+              pve_realm: $pve_realm,
+              proxmox_host: $proxmox_host,
+              proxmox_ssh_user: $proxmox_ssh_user,
+              proxmox_api_user: $proxmox_api_user,
+              proxmox_api_token_name: $proxmox_api_token_name,
+              proxmox_api_token_value: $proxmox_api_token_value,
+              proxmox_api_token: $proxmox_api_token
+            }' > "${tmp_token_json}"
+
+          if [ -f '{{.SOPS_CONFIG_FILE}}' ] && [ -f '{{.AGE_KEYS_FILE}}' ] && command -v sops >/dev/null 2>&1; then
+            SOPS_AGE_KEY_FILE='{{.AGE_KEYS_FILE}}' sops --encrypt --input-type json --output-type json "${tmp_token_json}" > "${token_enc_file}"
+            chmod 600 "${token_enc_file}"
+            echo "Wrote encrypted token snapshot: ${token_enc_file}"
+          else
+            echo 'SOPS bootstrap not detected. Skipping encrypted token snapshot.'
+          fi
+
+          echo "Wrote local token file: ${token_file}"
+          echo 'You can now source it for Terraform, Ansible, or wrapper consumers.'
+
+  proxmox:dirs:
+    desc: Create Proxmox and SSH secret directories under state/secrets
+    cmds:
+      - |
+          set -euo pipefail
+          mkdir -p '{{.PROXMOX_DIR}}' '{{.CONFIGS_DIR}}' '{{.SSH_DIR}}'
+          chmod 700 '{{.SECRETS_DIR}}' '{{.SSH_DIR}}' '{{.PROXMOX_DIR}}' || true
+          echo 'Ensured Proxmox directories exist under state/secrets'
+
+  proxmox:tools:check:
+    desc: Check required tools for Proxmox bootstrap tasks
+    cmds:
+      - |
+          set -euo pipefail
+          missing=0
+          for tool in ssh ssh-copy-id ssh-keyscan ssh-keygen jq awk sed; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "Missing required Proxmox tool: $tool" >&2
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ]
+          echo 'All required Proxmox tools are available'
+
+  proxmox:env:ensure:
+    desc: Ensure required Proxmox variables exist in state/configs/.env
+    cmds:
+      - |
+          set -euo pipefail
+
+          env_file='{{.ENV_FILE}}'
+          mkdir -p "$(dirname "${env_file}")"
+          touch "${env_file}"
+          chmod 600 "${env_file}" || true
+
+          upsert_env() {
+            key="$1"
+            value="$2"
+            file="$3"
+            if grep -qE "^${key}=" "${file}"; then
+              awk -v key="${key}" -v value="${value}" '
+                BEGIN { updated = 0 }
+                $0 ~ "^" key "=" {
+                  print key "=" value
+                  updated = 1
+                  next
+                }
+                { print }
+                END {
+                  if (updated == 0) {
+                    print key "=" value
+                  }
+                }
+              ' "${file}" > "${file}.tmp"
+              mv "${file}.tmp" "${file}"
+            else
+              printf '%s=%s\n' "${key}" "${value}" >> "${file}"
+            fi
+          }
+
+          prompt_env() {
+            key="$1"
+            default_value="$2"
+            current_value="$(grep -E "^${key}=" "${env_file}" | tail -n 1 | cut -d'=' -f2- || true)"
+            if [ -n "${current_value}" ]; then
+              printf '%s' "${current_value}"
+              return 0
+            fi
+
+            echo "Missing ${key} in ${env_file}." > /dev/tty
+            printf '%s' "Enter value for ${key} [${default_value}]: " > /dev/tty
+            read -r response < /dev/tty || true
+            if [ -z "${response}" ]; then
+              response="${default_value}"
+            fi
+            upsert_env "${key}" "${response}" "${env_file}"
+            printf '%s' "${response}"
+          }
+
+          proxmox_host="$(prompt_env PROXMOX_HOST '{{.DEFAULT_PROXMOX_HOST}}')"
+          proxmox_ssh_user="$(prompt_env PROXMOX_SSH_USER '{{.DEFAULT_PROXMOX_SSH_USER}}')"
+          pve_realm="$(prompt_env PVE_REALM '{{.DEFAULT_PVE_REALM}}')"
+
+          echo
+          echo 'Using Proxmox configuration:'
+          echo "  PROXMOX_HOST=${proxmox_host}"
+          echo "  PROXMOX_SSH_USER=${proxmox_ssh_user}"
+          echo "  PVE_REALM=${pve_realm}"
+
+  proxmox:ssh:authorise:
+    desc: Ensure the repo SSH key can access the Proxmox host
+    cmds:
+      - |
+          set -euo pipefail
+
+          env_file='{{.ENV_FILE}}'
+          ssh_key='{{.SSH_KEY_PATH}}'
+          ssh_pub_key='{{.SSH_PUB_KEY_PATH}}'
+          known_hosts='{{.SSH_KNOWN_HOSTS}}'
+
+          if [ ! -f "${env_file}" ]; then
+            echo "Required env file not found: ${env_file}"
+            exit 1
+          fi
+          if [ ! -f "${ssh_key}" ] || [ ! -f "${ssh_pub_key}" ]; then
+            echo 'SSH keypair not found under {{.SSH_DIR}}.'
+            echo 'Run: task secrets:ssh:keys'
+            exit 1
+          fi
+
+          # shellcheck disable=SC1090
+          . "${env_file}"
+
+          if [ -z "${PROXMOX_HOST:-}" ] || [ -z "${PROXMOX_SSH_USER:-}" ]; then
+            echo "Missing PROXMOX_HOST or PROXMOX_SSH_USER in ${env_file}."
+            exit 1
+          fi
+
+          mkdir -p "$(dirname "${known_hosts}")"
+          touch "${known_hosts}"
+          chmod 600 "${known_hosts}" || true
+
+          ssh-keyscan -H "${PROXMOX_HOST}" >> "${known_hosts}" 2>/dev/null || true
+          sort -u "${known_hosts}" -o "${known_hosts}"
+
+          if ssh \
+            -i "${ssh_key}" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="${known_hosts}" \
+            "${PROXMOX_SSH_USER}@${PROXMOX_HOST}" \
+            'true' >/dev/null 2>&1; then
+            echo "Repo SSH key already authorised on ${PROXMOX_HOST}."
+            exit 0
+          fi
+
+          echo "Repo SSH key is not yet authorised on ${PROXMOX_HOST}."
+          echo 'You may be prompted for the remote account password to seed the key.'
+
+          ssh-copy-id \
+            -i "${ssh_pub_key}" \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="${known_hosts}" \
+            "${PROXMOX_SSH_USER}@${PROXMOX_HOST}"
+
+          ssh \
+            -i "${ssh_key}" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="${known_hosts}" \
+            "${PROXMOX_SSH_USER}@${PROXMOX_HOST}" \
+            'true' >/dev/null
+
+          echo "Repo SSH key successfully authorised on ${PROXMOX_HOST}."
+
+  proxmox:status:
+    desc: Show current local Proxmox bootstrap state
+    cmds:
+      - |
+          set -euo pipefail
+          echo 'Env file:        {{.ENV_FILE}}'
+          echo 'SSH private key: {{.SSH_KEY_PATH}}'
+          echo 'SSH public key:  {{.SSH_PUB_KEY_PATH}}'
+          echo 'Known hosts:     {{.SSH_KNOWN_HOSTS}}'
+          echo 'Token file:      {{.TOKEN_ENV_FILE}}'
+          echo 'Encrypted file:  {{.TOKEN_ENC_FILE}}'
+          if [ -f '{{.TOKEN_ENV_FILE}}' ]; then
+            echo 'Token file status: present'
+          else
+            echo 'Token file status: missing'
+          fi
+          if [ -f '{{.TOKEN_ENC_FILE}}' ]; then
+            echo 'Encrypted token status: present'
+          else
+            echo 'Encrypted token status: missing'
+          fi
