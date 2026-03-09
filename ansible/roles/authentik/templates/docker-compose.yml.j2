@@ -1,0 +1,67 @@
+# ================================================================
+# File: ansible/roles/authentik/templates/docker-compose.yml.j2
+# Purpose:
+#   Docker Compose stack for authentik.
+#
+# Notes:
+#   - Based on the current authentik Docker installation pattern.
+#   - Intended for a dedicated VM rather than a shared admin host.
+# ================================================================
+
+services:
+  postgresql:
+    image: docker.io/library/postgres:18-alpine
+    restart: unless-stopped
+    env_file:
+      - ./env/authentik.env
+    environment:
+      POSTGRES_DB: ${AUTHENTIK_POSTGRESQL__NAME}
+      POSTGRES_USER: ${AUTHENTIK_POSTGRESQL__USER}
+      POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRESQL__PASSWORD}
+    volumes:
+      - postgresql_data:/var/lib/postgresql/data
+
+  redis:
+    image: docker.io/library/redis:8-alpine
+    restart: unless-stopped
+    command: --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+
+  server:
+    image: ghcr.io/goauthentik/server:{{ authentik_version | default('2026.2') }}
+    restart: unless-stopped
+    command: server
+    env_file:
+      - ./env/authentik.env
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    depends_on:
+      - postgresql
+      - redis
+    volumes:
+      - authentik_media:/media
+      - authentik_custom_templates:/templates
+
+  worker:
+    image: ghcr.io/goauthentik/server:{{ authentik_version | default('2026.2') }}
+    restart: unless-stopped
+    command: worker
+    env_file:
+      - ./env/authentik.env
+    depends_on:
+      - postgresql
+      - redis
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - authentik_media:/media
+      - authentik_certs:/certs
+      - authentik_custom_templates:/templates
+
+volumes:
+  postgresql_data:
+  redis_data:
+  authentik_media:
+  authentik_certs:
+  authentik_custom_templates:

@@ -5,7 +5,7 @@
 #
 # Notes:
 #   - The template is expected to contain qemu-guest-agent and cloud-init.
-#   - The clone block follows the provider's current clone guide.
+#   - The cloud-init username is parameterised to support Ubuntu and Rocky.
 # ================================================================
 
 resource "proxmox_virtual_environment_vm" "this" {
@@ -48,7 +48,7 @@ resource "proxmox_virtual_environment_vm" "this" {
     }
 
     user_account {
-      username = "ubuntu"
+      username = var.cloud_init_user
       keys     = [var.vm_ssh_public_key]
     }
   }

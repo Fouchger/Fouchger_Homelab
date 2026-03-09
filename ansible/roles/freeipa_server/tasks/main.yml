@@ -1,0 +1,28 @@
+---
+# ================================================================
+# File: ansible/roles/freeipa_server/tasks/main.yml
+# Purpose:
+#   Install and configure a FreeIPA server using the upstream collection.
+#
+# Notes:
+#   - This role delegates the core install to the supported
+#     `freeipa.ansible_freeipa.ipaserver` role.
+#   - Prefer a dedicated RHEL-compatible VM for this role.
+# ================================================================
+
+- name: Ensure FreeIPA platform package prerequisites are present
+  ansible.builtin.package:
+    name:
+      - chrony
+      - firewalld
+    state: present
+
+- name: Ensure firewalld is enabled and running
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+
+- name: Install FreeIPA server using upstream role
+  ansible.builtin.include_role:
+    name: freeipa.ansible_freeipa.ipaserver

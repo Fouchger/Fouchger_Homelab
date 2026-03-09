@@ -1,0 +1,55 @@
+# ================================================================
+# File: tasks/ansible.Taskfile.yml
+# Purpose:
+#   Provide Ansible execution, inventory rendering, and collection bootstrap.
+#
+# Notes:
+#   - Inventory is generated from Terraform outputs.
+#   - Generated files are written under state/ to avoid polluting repo content.
+# ================================================================
+
+version: '3'
+
+silent: false
+
+vars:
+  ANSIBLE_DIR: 'ansible'
+  INVENTORY_FILE: 'state/ansible/inventory/lab/hosts.yml'
+  DEFAULT_PLAYBOOK: 'ansible/playbooks/site.yml'
+  TERRAFORM_ENV_DIR: 'terraform/environments/lab'
+  DEFAULT_ANSIBLE_BIN: '{{.ANSIBLE_BIN | default "ansible-playbook"}}'
+  DEFAULT_ANSIBLE_GALAXY_BIN: '{{.ANSIBLE_GALAXY_BIN | default "ansible-galaxy"}}'
+
+tasks:
+  ansible:collections:install:
+    desc: Install required Ansible collections for the homelab playbooks
+    cmds:
+      - |
+          set -euo pipefail
+          {{.DEFAULT_ANSIBLE_GALAXY_BIN}} collection install -r {{.ANSIBLE_DIR}}/collections/requirements.yml
+
+  ansible:inventory:render:
+    desc: Render the generated Ansible inventory from Terraform outputs
+    deps:
+      - ansible:collections:install
+    cmds:
+      - mkdir -p state/ansible/inventory/lab
+      - python3 scripts/render_inventory.py --terraform-dir {{.TERRAFORM_ENV_DIR}} --output {{.INVENTORY_FILE}}
+
+  ansible:ping:
+    desc: Verify Ansible connectivity to all generated inventory hosts
+    cmds:
+      - ansible all -i {{.INVENTORY_FILE}} -m ping
+
+  ansible:playbook:
+    desc: Run an Ansible playbook using the generated inventory
+    cmds:
+      - |
+          set -euo pipefail
+          playbook='{{.PLAYBOOK | default .DEFAULT_PLAYBOOK}}'
+          limit='{{.LIMIT | default ""}}'
+          if [ -n "${limit}" ]; then
+            {{.DEFAULT_ANSIBLE_BIN}} -i {{.INVENTORY_FILE}} "${playbook}" --limit "${limit}"
+          else
+            {{.DEFAULT_ANSIBLE_BIN}} -i {{.INVENTORY_FILE}} "${playbook}"
+          fi

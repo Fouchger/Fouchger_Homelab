@@ -19,4 +19,5 @@ variable "ipv4_address" { description = "IPv4 address in CIDR format or dhcp" ty
 variable "ipv4_gateway" { description = "IPv4 gateway" type = string }
 variable "dns_servers" { description = "DNS servers for cloud-init" type = list(string) default = ["1.1.1.1", "9.9.9.9"] }
 variable "vm_ssh_public_key" { description = "SSH public key injected by cloud-init" type = string }
+variable "cloud_init_user" { description = "Cloud-init username for the guest operating system" type = string default = "ubuntu" }
 variable "tags" { description = "Tags applied to the VM" type = list(string) default = [] }

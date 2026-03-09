@@ -27,3 +27,7 @@ __pycache__/
 .env.local
 .envrc.local
 config/examples/state.env.example
+
+# Generated automation state
+state/ansible/
+.ansible/

@@ -1,0 +1,37 @@
+---
+# ================================================================
+# File: ansible/roles/authentik/tasks/main.yml
+# Purpose:
+#   Deploy authentik with Docker Compose on a dedicated VM.
+#
+# Notes:
+#   - This role provides the platform install scaffold only.
+#   - Provider and application objects should be configured later through
+#     the authentik Terraform provider or authenticated API workflows.
+# ================================================================
+
+- name: Ensure authentik deployment directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0750'
+  loop:
+    - /opt/authentik
+    - /opt/authentik/env
+
+- name: Render authentik environment file
+  ansible.builtin.template:
+    src: authentik.env.j2
+    dest: /opt/authentik/env/authentik.env
+    mode: '0640'
+
+- name: Render authentik compose file
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: /opt/authentik/docker-compose.yml
+    mode: '0644'
+
+- name: Start authentik stack
+  community.docker.docker_compose_v2:
+    project_src: /opt/authentik
+    state: present

@@ -1,0 +1,21 @@
+---
+# ================================================================
+# File: ansible/playbooks/identity.yml
+# Purpose:
+#   Deploy identity services for the homelab.
+# ================================================================
+
+- name: Configure authentik service hosts
+  hosts: identity_authentik
+  become: true
+  roles:
+    - role: base_linux
+    - role: container_runtime
+    - role: authentik
+
+- name: Configure FreeIPA server hosts
+  hosts: identity_freeipa
+  become: true
+  roles:
+    - role: base_linux
+    - role: freeipa_server

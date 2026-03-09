@@ -1,0 +1,9 @@
+# ================================================================
+# File: ansible/collections/requirements.yml
+# Purpose:
+#   Declare the Ansible Galaxy collections required by the homelab playbooks.
+# ================================================================
+
+collections:
+  - name: community.docker
+  - name: freeipa.ansible_freeipa

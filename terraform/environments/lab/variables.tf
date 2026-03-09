@@ -1,14 +1,7 @@
 # ================================================================
-# File: terraform/variables.tf
+# File: terraform/environments/lab/variables.tf
 # Purpose:
-#   Define the shared Terraform inputs for Proxmox, Ubuntu templates,
-#   VM instances, and LXC instances.
-#
-# Notes:
-#   - Sensitive values are supplied by Task wrappers from repo-managed
-#     secret files under state/secrets/.
-#   - Ubuntu 26.04 inputs are present for future readiness but disabled
-#     by default until release media is confirmed.
+#   Define Terraform inputs for the Proxmox-backed lab environment.
 # ================================================================
 
 variable "proxmox_endpoint" {
@@ -34,7 +27,7 @@ variable "proxmox_node_name" {
 }
 
 variable "proxmox_template_datastore" {
-  description = "Datastore used for Ubuntu cloud images and LXC templates"
+  description = "Datastore used for cloud images and LXC templates"
   type        = string
   default     = "local"
 }
@@ -63,12 +56,12 @@ variable "proxmox_ssh_private_key_path" {
 }
 
 variable "vm_ssh_public_key" {
-  description = "SSH public key injected into Ubuntu VMs and LXCs"
+  description = "SSH public key injected into VMs and LXCs"
   type        = string
 }
 
-variable "ubuntu_26_enabled" {
-  description = "Enable Ubuntu 26.04 resources after release media has been confirmed"
-  type        = bool
-  default     = false
+variable "default_dns_servers" {
+  description = "Default DNS servers injected into cloud-init for VMs"
+  type        = list(string)
+  default     = ["1.1.1.1", "9.9.9.9"]
 }

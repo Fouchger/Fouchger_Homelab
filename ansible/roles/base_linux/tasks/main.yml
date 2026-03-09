@@ -1,0 +1,22 @@
+---
+# ================================================================
+# File: ansible/roles/base_linux/tasks/main.yml
+# Purpose:
+#   Apply common Linux baseline settings.
+# ================================================================
+
+- name: Ensure base package set is present
+  ansible.builtin.package:
+    name: "{{ base_linux_packages }}"
+    state: present
+
+- name: Ensure qemu-guest-agent is enabled when installed
+  ansible.builtin.service:
+    name: qemu-guest-agent
+    state: started
+    enabled: true
+  failed_when: false
+
+- name: Ensure system timezone is configured
+  community.general.timezone:
+    name: "{{ homelab_timezone }}"

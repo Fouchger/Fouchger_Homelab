@@ -1,0 +1,21 @@
+---
+# ================================================================
+# File: ansible/playbooks/site.yml
+# Purpose:
+#   Main site playbook for the homelab repository.
+# ================================================================
+
+- name: Apply baseline configuration to all Linux hosts
+  hosts: linux
+  become: true
+  roles:
+    - role: base_linux
+
+- name: Apply container runtime to container hosts
+  hosts: docker_hosts
+  become: true
+  roles:
+    - role: container_runtime
+
+- name: Apply identity service roles
+  import_playbook: identity.yml

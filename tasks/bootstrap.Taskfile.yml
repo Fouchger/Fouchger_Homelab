@@ -53,7 +53,7 @@ tasks:
       - task: ansible
       - task: terraform
       - task: packer
-      - task: code-server
+
 
   bootstrap:
     desc: Alias for the full host bootstrap sequence
