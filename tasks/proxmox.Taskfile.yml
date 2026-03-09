@@ -381,6 +381,18 @@ tasks:
     desc: Ensure the repo SSH key can access the Proxmox host
     cmds:
       - |
+          # ================================================================
+          # Task: proxmox:ssh:authorise
+          # Purpose:
+          #   Ensure the repo-managed SSH key can access the Proxmox host.
+          #
+          # Notes:
+          #   - Uses the same ssh-copy-id command pattern that worked manually.
+          #   - ssh-copy-id is idempotent and will not duplicate the key if it
+          #     already exists in the remote authorised_keys file.
+          #   - Replaces any stale local known_hosts entry for the target host
+          #     before re-scanning the current host key.
+          # ================================================================
           set -euo pipefail
 
           env_file='{{.ENV_FILE}}'
@@ -392,6 +404,7 @@ tasks:
             echo "Required env file not found: ${env_file}"
             exit 1
           fi
+
           if [ ! -f "${ssh_key}" ] || [ ! -f "${ssh_pub_key}" ]; then
             echo 'SSH keypair not found under {{.SSH_DIR}}.'
             echo 'Run: task secrets:ssh:keys'
@@ -410,15 +423,19 @@ tasks:
           touch "${known_hosts}"
           chmod 600 "${known_hosts}" || true
 
+          # Refresh the local host key entry for this machine.
+          ssh-keygen -R "${PROXMOX_HOST}" -f "${known_hosts}" >/dev/null 2>&1 || true
           ssh-keyscan -H "${PROXMOX_HOST}" >> "${known_hosts}" 2>/dev/null || true
           sort -u "${known_hosts}" -o "${known_hosts}"
+
+          ssh_target="${PROXMOX_SSH_USER}@${PROXMOX_HOST}"
 
           if ssh \
             -i "${ssh_key}" \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="${known_hosts}" \
-            "${PROXMOX_SSH_USER}@${PROXMOX_HOST}" \
+            "${ssh_target}" \
             'true' >/dev/null 2>&1; then
             echo "Repo SSH key already authorised on ${PROXMOX_HOST}."
             exit 0
@@ -427,19 +444,16 @@ tasks:
           echo "Repo SSH key is not yet authorised on ${PROXMOX_HOST}."
           echo 'You may be prompted for the remote account password to seed the key.'
 
-          ssh-copy-id \
-            -i "${ssh_pub_key}" \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="${known_hosts}" \
-            "${PROXMOX_SSH_USER}@${PROXMOX_HOST}"
+          # Use the same simple ssh-copy-id form that worked manually.
+          ssh-copy-id -i "${ssh_pub_key}" "${ssh_target}"
 
           ssh \
             -i "${ssh_key}" \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="${known_hosts}" \
-            "${PROXMOX_SSH_USER}@${PROXMOX_HOST}" \
-            'true' >/dev/null
+            "${ssh_target}" \
+            'true' >/dev/null 2>&1
 
           echo "Repo SSH key successfully authorised on ${PROXMOX_HOST}."
 

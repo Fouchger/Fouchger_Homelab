@@ -12,7 +12,7 @@
 
 version: '3'
 
-silent: true
+silent: false
 
 includes:
   secrets:
