@@ -160,14 +160,14 @@ locals {
         {
           for group in distinct(flatten([
             for _, service in local.services : service.ansible_groups
-          ])) : group => {
+            ])) : group => {
             hosts = {
               for service_key, service in local.services :
               service.name => {
-                ansible_host = split("/", service.ipv4_address)[0]
-                ansible_user = local.vm_image_catalog[service.image_key].default_user
-                homelab_role = try(service.tags[1], service.tags[0])
-                proxmox_vm_id = service.vm_id
+                ansible_host       = split("/", service.ipv4_address)[0]
+                ansible_user       = local.vm_image_catalog[service.image_key].default_user
+                homelab_role       = try(service.tags[1], service.tags[0])
+                proxmox_vm_id      = service.vm_id
                 proxmox_guest_type = service.guest_type
               }
               if contains(service.ansible_groups, group)
