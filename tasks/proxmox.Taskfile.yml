@@ -43,7 +43,8 @@ vars:
   TOKEN_ENV_FILE: '{{.TOKEN_ENV_FILE | default (printf "%s/proxmox-api-token.env" .PROXMOX_DIR)}}'
   TOKEN_ENC_FILE: '{{.TOKEN_ENC_FILE | default (printf "%s/proxmox-api-token.enc.json" .PROXMOX_DIR)}}'
 
-  DEFAULT_PROXMOX_HOST: '{{.DEFAULT_PROXMOX_HOST | default "192.168.88.250"}}'
+  DEFAULT_PROXMOX_HOST_IP: '{{.DEFAULT_PROXMOX_HOST_IP | default "192.168.88.250"}}'
+  DEFAULT_PROXMOX_HOST: '{{.DEFAULT_PROXMOX_HOST | default "pve01"}}'
   DEFAULT_PROXMOX_SSH_USER: '{{.DEFAULT_PROXMOX_SSH_USER | default "root"}}'
   DEFAULT_PVE_REALM: '{{.DEFAULT_PVE_REALM | default "pve"}}'
 
@@ -95,7 +96,7 @@ tasks:
 
           if [ -z "${PROXMOX_HOST:-}" ] || [ -z "${PROXMOX_SSH_USER:-}" ] || [ -z "${PVE_REALM:-}" ]; then
             echo "Missing one or more required Proxmox variables in ${env_file}."
-            echo 'Expected: PROXMOX_HOST, PROXMOX_SSH_USER, PVE_REALM'
+            echo 'Expected: PROXMOX_HOST_IP, PROXMOX_HOST,  PROXMOX_SSH_USER, PVE_REALM'
             exit 1
           fi
 
@@ -197,14 +198,14 @@ tasks:
           install -m 600 "${tmp_remote_script}" "${remote_script}"
           rm -f "${tmp_remote_script}"
 
-          echo "Reconciling Proxmox automation identity on ${PROXMOX_HOST}..."
+          echo "Reconciling Proxmox automation identity on ${PROXMOX_HOST_IP}..."
           token_json="$({
             ssh \
               -i "${ssh_key}" \
               -o BatchMode=yes \
               -o StrictHostKeyChecking=accept-new \
               -o UserKnownHostsFile="${known_hosts}" \
-              "${PROXMOX_SSH_USER}@${PROXMOX_HOST}" \
+              "${PROXMOX_SSH_USER}@${PROXMOX_HOST_IP}" \
               'bash -s' < "${remote_script}"
           })"
 
@@ -237,6 +238,7 @@ tasks:
             printf 'PVE_ROLE_NAME=%s\n' "${pve_role}"
             printf 'PVE_TOKEN_ID=%s\n' "${pve_token_id}"
             printf 'PVE_REALM=%s\n' "${PVE_REALM}"
+            printf 'PROXMOX_HOST_IP=%s\n' "${PROXMOX_HOST_IP}"
             printf 'PROXMOX_HOST=%s\n' "${PROXMOX_HOST}"
             printf 'PROXMOX_SSH_USER=%s\n' "${PROXMOX_SSH_USER}"
             printf 'PROXMOX_API_USER=%s\n' "${pve_user}@${PVE_REALM}"
@@ -252,6 +254,7 @@ tasks:
             --arg pve_role_name "${pve_role}" \
             --arg pve_token_id "${pve_token_id}" \
             --arg pve_realm "${PVE_REALM}" \
+            --arg proxmox_host_ip "${PROXMOX_HOST_IP}" \
             --arg proxmox_host "${PROXMOX_HOST}" \
             --arg proxmox_ssh_user "${PROXMOX_SSH_USER}" \
             --arg proxmox_api_user "${pve_user}@${PVE_REALM}" \
@@ -263,6 +266,7 @@ tasks:
               pve_role_name: $pve_role_name,
               pve_token_id: $pve_token_id,
               pve_realm: $pve_realm,
+              proxmox_host_ip: $proxmox_host_ip,
               proxmox_host: $proxmox_host,
               proxmox_ssh_user: $proxmox_ssh_user,
               proxmox_api_user: $proxmox_api_user,
@@ -366,12 +370,14 @@ tasks:
             printf '%s' "${response}"
           }
 
+          proxmox_host_ip="$(prompt_env PROXMOX_HOST_IP '{{.DEFAULT_PROXMOX_HOST_IP}}')"
           proxmox_host="$(prompt_env PROXMOX_HOST '{{.DEFAULT_PROXMOX_HOST}}')"
           proxmox_ssh_user="$(prompt_env PROXMOX_SSH_USER '{{.DEFAULT_PROXMOX_SSH_USER}}')"
           pve_realm="$(prompt_env PVE_REALM '{{.DEFAULT_PVE_REALM}}')"
 
           echo
           echo 'Using Proxmox configuration:'
+          echo "  PROXMOX_HOST_IP=${proxmox_host_ip}"
           echo "  PROXMOX_HOST=${proxmox_host}"
           echo "  PROXMOX_SSH_USER=${proxmox_ssh_user}"
           echo "  PVE_REALM=${pve_realm}"
@@ -410,23 +416,23 @@ tasks:
           # shellcheck disable=SC1090
           . "${env_file}"
 
-          if [ -z "${PROXMOX_HOST:-}" ] || [ -z "${PROXMOX_SSH_USER:-}" ]; then
-            echo "Missing PROXMOX_HOST or PROXMOX_SSH_USER in ${env_file}."
+          if [ -z "${PROXMOX_HOST_IP:-}" ] || [ -z "${PROXMOX_SSH_USER:-}" ]; then
+            echo "Missing PROXMOX_HOST_IP or PROXMOX_SSH_USER in ${env_file}."
             exit 1
           fi
 
-          ssh_target="${PROXMOX_SSH_USER}@${PROXMOX_HOST}"
+          ssh_target="${PROXMOX_SSH_USER}@${PROXMOX_HOST_IP}"
 
           if ssh \
             -i "${ssh_key}" \
             -o BatchMode=yes \
             "${ssh_target}" \
             'true' >/dev/null 2>&1; then
-            echo "Repo SSH key already authorised on ${PROXMOX_HOST}."
+            echo "Repo SSH key already authorised on ${PROXMOX_HOST_IP}."
             exit 0
           fi
 
-          echo "Repo SSH key is not yet authorised on ${PROXMOX_HOST}."
+          echo "Repo SSH key is not yet authorised on ${PROXMOX_HOST_IP}."
           echo 'You may be prompted for the remote account password to seed the key.'
 
           # Use the same simple ssh-copy-id form that worked manually.
@@ -438,7 +444,7 @@ tasks:
             "${ssh_target}" \
             'true' >/dev/null 2>&1
 
-          echo "Repo SSH key successfully authorised on ${PROXMOX_HOST}."
+          echo "Repo SSH key successfully authorised on ${PROXMOX_HOST_IP}."
 
   proxmox:status:
     desc: Show current local Proxmox bootstrap state
