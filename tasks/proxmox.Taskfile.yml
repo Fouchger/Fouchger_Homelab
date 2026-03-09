@@ -387,18 +387,15 @@ tasks:
           #   Ensure the repo-managed SSH key can access the Proxmox host.
           #
           # Notes:
-          #   - Uses the same ssh-copy-id command pattern that worked manually.
-          #   - ssh-copy-id is idempotent and will not duplicate the key if it
-          #     already exists in the remote authorised_keys file.
-          #   - Replaces any stale local known_hosts entry for the target host
-          #     before re-scanning the current host key.
+          #   - Uses a plain ssh-copy-id command.
+          #   - ssh-copy-id will not duplicate the same key if it already
+          #     exists on the remote host.
           # ================================================================
           set -euo pipefail
 
           env_file='{{.ENV_FILE}}'
           ssh_key='{{.SSH_KEY_PATH}}'
           ssh_pub_key='{{.SSH_PUB_KEY_PATH}}'
-          known_hosts='{{.SSH_KNOWN_HOSTS}}'
 
           if [ ! -f "${env_file}" ]; then
             echo "Required env file not found: ${env_file}"
@@ -419,22 +416,11 @@ tasks:
             exit 1
           fi
 
-          mkdir -p "$(dirname "${known_hosts}")"
-          touch "${known_hosts}"
-          chmod 600 "${known_hosts}" || true
-
-          # Refresh the local host key entry for this machine.
-          ssh-keygen -R "${PROXMOX_HOST}" -f "${known_hosts}" >/dev/null 2>&1 || true
-          ssh-keyscan -H "${PROXMOX_HOST}" >> "${known_hosts}" 2>/dev/null || true
-          sort -u "${known_hosts}" -o "${known_hosts}"
-
           ssh_target="${PROXMOX_SSH_USER}@${PROXMOX_HOST}"
 
           if ssh \
             -i "${ssh_key}" \
             -o BatchMode=yes \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="${known_hosts}" \
             "${ssh_target}" \
             'true' >/dev/null 2>&1; then
             echo "Repo SSH key already authorised on ${PROXMOX_HOST}."
@@ -450,8 +436,6 @@ tasks:
           ssh \
             -i "${ssh_key}" \
             -o BatchMode=yes \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="${known_hosts}" \
             "${ssh_target}" \
             'true' >/dev/null 2>&1
 
