@@ -58,13 +58,12 @@ vars:
 tasks:
   proxmox:api-user:
     desc: Create or refresh the Proxmox automation user, role, ACL, and API token
-    deps:
-      - secrets:init
-      - secrets:ssh:keys
-      - proxmox:dirs
-      - proxmox:env:ensure
-      - proxmox:tools:check
     cmds:
+      - task: secrets:init
+      - task: proxmox:tools:check
+      - task: proxmox:dirs
+      - task: proxmox:env:ensure
+      - task: secrets:ssh:keys
       - task: proxmox:ssh:authorise
       - |
           # ############################################################
