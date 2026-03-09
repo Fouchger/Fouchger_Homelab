@@ -2,13 +2,8 @@
 # File: .sops.yaml
 # Purpose:
 #   SOPS creation rules for secrets stored under state/secrets/
-#
-# Notes:
-#   - Rules are evaluated from top to bottom.
-#   - These patterns support both repo-relative paths and absolute paths.
 # ================================================================
 creation_rules:
   - path_regex: ^state/secrets/.*\.(ya?ml|json|env|ini|txt|conf)$
     age: >-
-      age16g7elxdldjwrmtc69fj85feupqzy0a75znyvyjlqlrx6xadz937qd52rf9,age1hw7p5h8gwzc04fp7xfgaqn6c0w670srmmj2d7wjjdy3erevnf3vqkujlh7
-
+      age1tcmauv82tx9he2542um4egrn2efzjrqt4cmqn63fschl7zx8recsuj9nr7,age1vzw0jjt46ekdykykj7xl98gw3pj4vf5evljmpegtz4dy0jq7qcmqgvvw23
