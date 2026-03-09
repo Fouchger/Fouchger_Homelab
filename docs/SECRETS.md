@@ -49,3 +49,8 @@ state/secrets/
 - Treat the OpenBao bootstrap directory as highly sensitive
 - Treat `state/secrets/ssh/` and `state/secrets/proxmox/` as operator-only material
 - For multi-node OpenBao later, extend the SAN entries and transit auto-unseal flow before adding peers
+
+## Terraform integration notes
+- Terraform sources `state/secrets/proxmox/proxmox-api-token.env` directly.
+- Terraform also uses the repo-managed SSH key under `state/secrets/ssh/`.
+- Optional Proxmox environment overrides such as `PROXMOX_NODE_NAME` and datastore settings can live in `state/configs/.env`.

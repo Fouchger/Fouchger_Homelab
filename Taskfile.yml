@@ -24,12 +24,14 @@ includes:
   proxmox:
     taskfile: ./tasks/proxmox.Taskfile.yml
     flatten: true
+  terraform:
+    taskfile: ./tasks/terraform.Taskfile.yml
+    flatten: true
   bootstrap_tasks:
     taskfile: ./tasks/bootstrap.Taskfile.yml
     flatten: false
 
 tasks:
-
   day1:
     desc: Complete day-1 secrets bootstrap for the homelab
     cmds:
@@ -44,8 +46,6 @@ tasks:
       - task: code-server
       - task: proxmox:api-user
 
-
-
   dev_setup:
     desc: Install git and gh, authenticate gh, configure Git auth, and install code-server
     cmds:
@@ -58,3 +58,9 @@ tasks:
     cmds:
       - task: proxmox:api-user
       
+  terraform_plan:
+    desc: Initialise and plan the Terraform Proxmox stack
+    cmds:
+      - task: terraform:init
+      - task: terraform:validate
+      - task: terraform:plan
