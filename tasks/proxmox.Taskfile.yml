@@ -210,7 +210,6 @@ tasks:
           })"
 
           rm -f "${remote_script}"
-          trap - EXIT
 
           token_value="$(printf '%s\n' "${token_json}" | jq -r '.value // empty')"
           full_token="${pve_user}@${PVE_REALM}!${pve_token_id}=${token_value}"

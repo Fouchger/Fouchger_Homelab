@@ -17,9 +17,9 @@ version: '3'
 
 silent: false
 
-includes:
-  secrets: ./secrets.Taskfile.yml
-  proxmox: ./proxmox.Taskfile.yml
+# includes:
+#   secrets: ./secrets.Taskfile.yml
+#   proxmox: ./proxmox.Taskfile.yml
 
 vars:
   ROOT_DIR:
