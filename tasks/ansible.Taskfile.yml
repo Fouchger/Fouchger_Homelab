@@ -6,6 +6,9 @@
 # Notes:
 #   - Inventory is generated from Terraform outputs.
 #   - Generated files are written under state/ to avoid polluting repo content.
+#   - ANSIBLE_CONFIG is explicitly set so repo-local config is always honoured.
+#   - Static group_vars are copied alongside the generated inventory so
+#     inventory-scoped variables resolve correctly at runtime.
 # ================================================================
 
 version: '3'
@@ -14,7 +17,10 @@ silent: false
 
 vars:
   ANSIBLE_DIR: 'ansible'
+  ANSIBLE_CONFIG_FILE: 'ansible/ansible.cfg'
+  INVENTORY_DIR: 'state/ansible/inventory/lab'
   INVENTORY_FILE: 'state/ansible/inventory/lab/hosts.yml'
+  SOURCE_GROUP_VARS_DIR: 'ansible/inventories/lab/group_vars'
   DEFAULT_PLAYBOOK: 'ansible/playbooks/site.yml'
   TERRAFORM_ENV_DIR: 'terraform/environments/lab'
   DEFAULT_ANSIBLE_BIN: '{{.ANSIBLE_BIN | default "ansible-playbook"}}'
@@ -26,6 +32,7 @@ tasks:
     cmds:
       - |
           set -euo pipefail
+          ANSIBLE_CONFIG="{{.ANSIBLE_CONFIG_FILE}}" \
           {{.DEFAULT_ANSIBLE_GALAXY_BIN}} collection install -r {{.ANSIBLE_DIR}}/collections/requirements.yml
 
   ansible:inventory:render:
@@ -33,23 +40,34 @@ tasks:
     deps:
       - ansible:collections:install
     cmds:
-      - mkdir -p state/ansible/inventory/lab
+      - mkdir -p {{.INVENTORY_DIR}}
       - python3 scripts/render_inventory.py --terraform-dir {{.TERRAFORM_ENV_DIR}} --output {{.INVENTORY_FILE}}
+      - rm -rf {{.INVENTORY_DIR}}/group_vars
+      - cp -R {{.SOURCE_GROUP_VARS_DIR}} {{.INVENTORY_DIR}}/group_vars
 
   ansible:ping:
     desc: Verify Ansible connectivity to all generated inventory hosts
+    deps:
+      - ansible:inventory:render
     cmds:
-      - ansible all -i {{.INVENTORY_FILE}} -m ping
+      - |
+          set -euo pipefail
+          ANSIBLE_CONFIG="{{.ANSIBLE_CONFIG_FILE}}" \
+          ansible all -i {{.INVENTORY_FILE}} -m ping
 
   ansible:playbook:
     desc: Run an Ansible playbook using the generated inventory
+    deps:
+      - ansible:inventory:render
     cmds:
       - |
           set -euo pipefail
           playbook='{{.PLAYBOOK | default .DEFAULT_PLAYBOOK}}'
           limit='{{.LIMIT | default ""}}'
           if [ -n "${limit}" ]; then
+            ANSIBLE_CONFIG="{{.ANSIBLE_CONFIG_FILE}}" \
             {{.DEFAULT_ANSIBLE_BIN}} -i {{.INVENTORY_FILE}} "${playbook}" --limit "${limit}"
           else
+            ANSIBLE_CONFIG="{{.ANSIBLE_CONFIG_FILE}}" \
             {{.DEFAULT_ANSIBLE_BIN}} -i {{.INVENTORY_FILE}} "${playbook}"
           fi

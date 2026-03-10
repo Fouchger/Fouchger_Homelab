@@ -272,7 +272,7 @@ tasks:
   terraform:bootstrap:apply:
     desc: Apply optional template bootstrap resources on Proxmox
     cmds:
-      - task: terraform:apply
+      - task: terraform:apply -auto-approve
         vars:
           TEMPLATE_BOOTSTRAP: 'true'
 
