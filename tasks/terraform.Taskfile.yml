@@ -275,3 +275,50 @@ tasks:
       - task: terraform:apply
         vars:
           TEMPLATE_BOOTSTRAP: 'true'
+
+  terraform:destroy:
+    desc: Destroy all Terraform-managed Proxmox resources using repo-managed secrets
+    deps:
+      - terraform:init
+    cmds:
+      - |
+          set -euo pipefail
+
+          env_file='{{.ENV_FILE}}'
+          token_file='{{.TOKEN_ENV_FILE}}'
+          terraform_dir='{{.TERRAFORM_DIR}}'
+
+          # shellcheck disable=SC1090
+          . "${env_file}"
+          # shellcheck disable=SC1090
+          . "${token_file}"
+
+          : "${REPO_DIR:?REPO_DIR must be set in ${env_file}}"
+          : "${PROXMOX_HOST:?PROXMOX_HOST must be set in ${env_file}}"
+          : "${PROXMOX_NODE_NAME:?PROXMOX_NODE_NAME must be set in ${env_file}}"
+
+          ssh_key_path="${REPO_DIR}/state/secrets/ssh/id_ed25519_homelab"
+          ssh_pub_key_path="${ssh_key_path}.pub"
+
+          export TF_VAR_proxmox_endpoint="https://${PROXMOX_HOST}:8006/"
+          export TF_VAR_proxmox_api_token="${PROXMOX_API_TOKEN}"
+          export TF_VAR_proxmox_node_name="${PROXMOX_NODE_NAME}"
+          export TF_VAR_proxmox_insecure_tls="${PROXMOX_INSECURE_TLS:-true}"
+          export TF_VAR_proxmox_snippets_datastore="${PROXMOX_SNIPPETS_DATASTORE:-local}"
+          export TF_VAR_proxmox_template_datastore="${PROXMOX_TEMPLATE_DATASTORE:-local}"
+          export TF_VAR_proxmox_vm_datastore="${PROXMOX_VM_DATASTORE:-local-lvm}"
+          export TF_VAR_proxmox_ssh_private_key_path="${ssh_key_path}"
+          export TF_VAR_proxmox_ssh_user="${PROXMOX_SSH_USER:-root}"
+          export TF_VAR_vm_ssh_public_key="$(cat "${ssh_pub_key_path}")"
+          export TF_VAR_enable_template_bootstrap='{{.TEMPLATE_BOOTSTRAP}}'
+          export TF_VAR_vm_template_ids="$(jq -cn \
+            --arg ubuntu24 "${PROXMOX_VM_TEMPLATE_UBUNTU24_ID:-9002}" \
+            --arg rocky9 "${PROXMOX_VM_TEMPLATE_ROCKY9_ID:-9001}" \
+            '{ubuntu24: ($ubuntu24 | tonumber), rocky9: ($rocky9 | tonumber)}')"
+          export TF_VAR_lxc_template_file_ids="$(jq -cn \
+            --arg ubuntu24 "${PROXMOX_LXC_TEMPLATE_UBUNTU24_FILE_ID:-}" \
+            'if $ubuntu24 == "" then {} else {ubuntu24: $ubuntu24} end')"
+
+          echo '[1/1] Destroying Terraform-managed infrastructure'
+          cd "${terraform_dir}"
+          {{.DEFAULT_TERRAFORM_BIN}} destroy

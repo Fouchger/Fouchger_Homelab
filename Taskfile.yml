@@ -63,6 +63,14 @@ tasks:
       - task: bootstrap_tasks:ansible
       - task: bootstrap_tasks:terraform
       - task: bootstrap_tasks:packer
+      - task: terraform:init
+      - task: terraform:validate
+      - task: terraform:plan
+      - task: terraform:apply
+      - task: ansible:inventory:render
+      - task: ansible:playbook
+        vars:
+          PLAYBOOK: ansible/playbooks/identity.yml
 
   dev_setup:
     desc: Install git and gh, authenticate gh, configure Git auth, and install code-server
@@ -92,7 +100,6 @@ tasks:
   service:authentik:deploy:
     desc: Provision infrastructure and deploy authentik on the identity_authentik hosts
     cmds:
-      - task: terraform:apply
       - task: ansible:inventory:render
       - task: ansible:playbook
         vars:
@@ -102,7 +109,6 @@ tasks:
   service:freeipa:deploy:
     desc: Provision infrastructure and deploy FreeIPA on the identity_freeipa hosts
     cmds:
-      - task: terraform:apply
       - task: ansible:inventory:render
       - task: ansible:playbook
         vars:
