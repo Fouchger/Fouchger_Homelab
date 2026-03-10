@@ -4,9 +4,9 @@
 #   Compose the homelab Proxmox stack using service-driven guest definitions.
 #
 # Notes:
-#   - VM images are downloaded before template VMs are created.
-#   - LXC templates remain Ubuntu-based.
-#   - Services are provisioned from a single catalogue in locals.tf.
+#   - Steady-state provisioning clones from existing template IDs by default.
+#   - Template bootstrap remains available only when explicitly enabled.
+#   - LXC services are skipped until a matching template file ID is provided.
 # ================================================================
 
 terraform {
@@ -14,7 +14,7 @@ terraform {
 }
 
 resource "proxmox_virtual_environment_download_file" "vm_images" {
-  for_each = local.enabled_vm_image_catalog
+  for_each = var.enable_template_bootstrap ? local.enabled_vm_image_catalog : {}
 
   content_type = "iso"
   datastore_id = var.proxmox_template_datastore
@@ -25,7 +25,7 @@ resource "proxmox_virtual_environment_download_file" "vm_images" {
 }
 
 resource "proxmox_virtual_environment_download_file" "ubuntu_lxc_templates" {
-  for_each = local.enabled_ubuntu_releases
+  for_each = var.enable_template_bootstrap ? local.enabled_ubuntu_releases : {}
 
   content_type = "vztmpl"
   datastore_id = var.proxmox_template_datastore
@@ -36,7 +36,7 @@ resource "proxmox_virtual_environment_download_file" "ubuntu_lxc_templates" {
 }
 
 resource "proxmox_virtual_environment_vm" "vm_templates" {
-  for_each = local.enabled_vm_image_catalog
+  for_each = var.enable_template_bootstrap ? local.enabled_vm_image_catalog : {}
 
   name        = "tpl-${each.key}-cloudinit"
   description = "Terraform-managed template for ${each.key}"
@@ -104,7 +104,7 @@ module "services_vm" {
   description        = each.value.description
   node_name          = var.proxmox_node_name
   vm_id              = each.value.vm_id
-  clone_source_vm_id = proxmox_virtual_environment_vm.vm_templates[each.value.image_key].vm_id
+  clone_source_vm_id = local.resolved_vm_template_ids[each.value.image_key]
   target_datastore   = var.proxmox_vm_datastore
   cpu_cores          = each.value.cpu_cores
   memory_mb          = each.value.memory_mb
@@ -117,8 +117,6 @@ module "services_vm" {
   vm_ssh_public_key  = var.vm_ssh_public_key
   cloud_init_user    = local.vm_image_catalog[each.value.image_key].default_user
   tags               = concat(local.vm_image_catalog[each.value.image_key].tags, each.value.tags)
-
-  depends_on = [proxmox_virtual_environment_vm.vm_templates]
 }
 
 module "services_lxc" {
@@ -130,7 +128,7 @@ module "services_lxc" {
   description       = each.value.description
   node_name         = var.proxmox_node_name
   vm_id             = each.value.vm_id
-  template_file_id  = proxmox_virtual_environment_download_file.ubuntu_lxc_templates[each.value.image_key].id
+  template_file_id  = local.resolved_lxc_template_file_ids[each.value.image_key]
   disk_datastore    = var.proxmox_vm_datastore
   cpu_cores         = each.value.cpu_cores
   memory_mb         = each.value.memory_mb
@@ -141,6 +139,4 @@ module "services_lxc" {
   ipv4_gateway      = each.value.ipv4_gateway
   vm_ssh_public_key = var.vm_ssh_public_key
   tags              = concat(local.ubuntu_releases[each.value.image_key].tags, each.value.tags)
-
-  depends_on = [proxmox_virtual_environment_download_file.ubuntu_lxc_templates]
 }

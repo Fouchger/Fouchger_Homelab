@@ -1,11 +1,13 @@
 # ================================================================
 # File: terraform/environments/lab/locals.tf
 # Purpose:
-#   Define operating system catalog data and service-driven guest metadata.
+#   Define operating system catalog data, template resolution, and
+#   service-driven guest metadata.
 #
 # Notes:
 #   - Services are the primary source of truth for guest creation.
-#   - Identity hosts are modelled explicitly for authentik and FreeIPA.
+#   - Steady-state provisioning clones from existing templates by default.
+#   - Template bootstrap can be enabled explicitly when required.
 # ================================================================
 
 locals {
@@ -24,7 +26,7 @@ locals {
     ubuntu25 = {
       release_label = "25.10"
       codename      = "questing"
-      enabled       = true
+      enabled       = false
       vm_image_url  = "https://cloud-images.ubuntu.com/releases/server/25.10/release/ubuntu-25.10-server-cloudimg-amd64.img"
       lxc_url       = "https://cloud-images.ubuntu.com/releases/server/25.10/release/ubuntu-25.10-server-cloudimg-amd64-root.tar.xz"
       vm_file_name  = "ubuntu-25.10-server-cloudimg-amd64.img"
@@ -79,6 +81,7 @@ locals {
 
   services = {
     docker01 = {
+      enabled        = true
       guest_type     = "vm"
       image_key      = "ubuntu24"
       vm_id          = 24001
@@ -95,6 +98,7 @@ locals {
       tags           = ["vm", "docker"]
     }
     authentik01 = {
+      enabled        = true
       guest_type     = "vm"
       image_key      = "ubuntu24"
       vm_id          = 24021
@@ -111,6 +115,7 @@ locals {
       tags           = ["vm", "identity", "authentik"]
     }
     freeipa01 = {
+      enabled        = true
       guest_type     = "vm"
       image_key      = "rocky9"
       vm_id          = 24031
@@ -127,6 +132,7 @@ locals {
       tags           = ["vm", "identity", "freeipa"]
     }
     utility01 = {
+      enabled        = false
       guest_type     = "lxc"
       image_key      = "ubuntu24"
       vm_id          = 24101
@@ -144,31 +150,46 @@ locals {
     }
   }
 
+  resolved_vm_template_ids = merge(
+    var.vm_template_ids,
+    {
+      for key, template in proxmox_virtual_environment_vm.vm_templates : key => template.vm_id
+    }
+  )
+
+  resolved_lxc_template_file_ids = merge(
+    var.lxc_template_file_ids,
+    {
+      for key, file in proxmox_virtual_environment_download_file.ubuntu_lxc_templates : key => file.id
+    }
+  )
+
   vm_services = {
     for key, service in local.services : key => service
-    if service.guest_type == "vm" && contains(keys(local.enabled_vm_image_catalog), service.image_key)
+    if service.enabled && service.guest_type == "vm" && contains(keys(local.resolved_vm_template_ids), service.image_key)
   }
 
   lxc_services = {
     for key, service in local.services : key => service
-    if service.guest_type == "lxc" && contains(keys(local.enabled_ubuntu_releases), service.image_key)
+    if service.enabled && service.guest_type == "lxc" && contains(keys(local.resolved_lxc_template_file_ids), service.image_key)
   }
+
+  inventory_services = merge(local.vm_services, local.lxc_services)
 
   ansible_inventory = {
     all = {
       children = merge(
         {
           for group in distinct(flatten([
-            for _, service in local.services : service.ansible_groups
-            ])) : group => {
+            for _, service in local.inventory_services : service.ansible_groups
+          ])) : group => {
             hosts = {
-              for service_key, service in local.services :
-              service.name => {
+              for service_key, service in local.inventory_services : service_key => {
                 ansible_host       = split("/", service.ipv4_address)[0]
-                ansible_user       = local.vm_image_catalog[service.image_key].default_user
-                homelab_role       = try(service.tags[1], service.tags[0])
-                proxmox_vm_id      = service.vm_id
+                ansible_user       = service.guest_type == "vm" ? local.vm_image_catalog[service.image_key].default_user : local.ubuntu_releases[service.image_key].default_user
+                homelab_role       = contains(service.tags, "identity") ? "identity" : contains(service.tags, "docker") ? "docker" : contains(service.tags, "utility") ? "utility" : service.guest_type
                 proxmox_guest_type = service.guest_type
+                proxmox_vm_id      = service.vm_id
               }
               if contains(service.ansible_groups, group)
             }

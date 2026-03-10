@@ -5,17 +5,15 @@
 #
 # Notes:
 #   - Generated inventory lives under state/ansible/inventory/.
-#   - This file stores reusable defaults committed to the repository.
+#   - Host-specific ansible_user values are rendered from Terraform outputs.
 # ================================================================
 
-ansible_user: ubuntu
 ansible_become: true
 ansible_python_interpreter: /usr/bin/python3
 homelab_timezone: Pacific/Auckland
 homelab_domain: lab.local
 
 base_linux_packages:
-  - qemu-guest-agent
   - curl
   - git
   - jq

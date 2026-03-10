@@ -1,8 +1,7 @@
 # ================================================================
 # File: tasks/proxmox.Taskfile.yml
 # Purpose:
-#   Proxmox bootstrap tasks for creating the homelab automation user,
-#   custom role, ACL, and API token from an admin workstation.
+#   Proxmox bootstrap and template lifecycle tasks for the homelab.
 #
 # Notes:
 #   - This workflow runs locally and connects to Proxmox over SSH using the
@@ -13,9 +12,10 @@
 #     already available.
 #   - Remote user, role, ACL, and token objects are reconciled only when the
 #     local token env file is missing, avoiding accidental token churn.
-#   - If the repo SSH key is not yet authorised on the Proxmox host, the task
-#     performs an interactive ssh-copy-id step to seed access.
-#   - Required operator settings are stored in state/configs/.env.
+#   - Proxmox node metadata is discovered over SSH and written back into
+#     state/configs/.env so Terraform does not need to guess node names.
+#   - Template bootstrap downloads artefacts directly on the Proxmox host with
+#     wget and native Proxmox commands, avoiding the flaky API download path.
 # ================================================================
 
 version: '3'
@@ -47,8 +47,14 @@ vars:
   DEFAULT_PROXMOX_HOST: '{{.DEFAULT_PROXMOX_HOST | default "pve01"}}'
   DEFAULT_PROXMOX_SSH_USER: '{{.DEFAULT_PROXMOX_SSH_USER | default "root"}}'
   DEFAULT_PVE_REALM: '{{.DEFAULT_PVE_REALM | default "pve"}}'
+  DEFAULT_PROXMOX_TEMPLATE_DATASTORE: '{{.DEFAULT_PROXMOX_TEMPLATE_DATASTORE | default "local"}}'
+  DEFAULT_PROXMOX_VM_DATASTORE: '{{.DEFAULT_PROXMOX_VM_DATASTORE | default "local-lvm"}}'
+  DEFAULT_PROXMOX_SNIPPETS_DATASTORE: '{{.DEFAULT_PROXMOX_SNIPPETS_DATASTORE | default "local"}}'
+  DEFAULT_PROXMOX_INSECURE_TLS: '{{.DEFAULT_PROXMOX_INSECURE_TLS | default "true"}}'
 
   PVE_USER_NAME: '{{.PVE_USER_NAME | default "automation"}}'
+  UBUNTU24_TEMPLATE_ID: '{{.UBUNTU24_TEMPLATE_ID | default "9002"}}'
+  ROCKY9_TEMPLATE_ID: '{{.ROCKY9_TEMPLATE_ID | default "9001"}}'
   PVE_ROLE_NAME: '{{.PVE_ROLE_NAME | default "AutomationRole"}}'
   PVE_TOKEN_ID: '{{.PVE_TOKEN_ID | default "automation-token"}}'
   PVE_ROLE_PRIVS: '{{.PVE_ROLE_PRIVS | default "Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Modify,Sys.Console,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.Cloudinit,VM.Config.CPU,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Migrate,VM.PowerMgmt"}}'
@@ -66,6 +72,7 @@ tasks:
       - task: proxmox:env:ensure
       - task: secrets:ssh:keys
       - task: proxmox:ssh:authorise
+      - task: proxmox:discover
       - |
           # ############################################################
           # Task: proxmox:api-user
@@ -374,6 +381,10 @@ tasks:
           proxmox_host="$(prompt_env PROXMOX_HOST '{{.DEFAULT_PROXMOX_HOST}}')"
           proxmox_ssh_user="$(prompt_env PROXMOX_SSH_USER '{{.DEFAULT_PROXMOX_SSH_USER}}')"
           pve_realm="$(prompt_env PVE_REALM '{{.DEFAULT_PVE_REALM}}')"
+          proxmox_template_datastore="$(prompt_env PROXMOX_TEMPLATE_DATASTORE '{{.DEFAULT_PROXMOX_TEMPLATE_DATASTORE}}')"
+          proxmox_vm_datastore="$(prompt_env PROXMOX_VM_DATASTORE '{{.DEFAULT_PROXMOX_VM_DATASTORE}}')"
+          proxmox_snippets_datastore="$(prompt_env PROXMOX_SNIPPETS_DATASTORE '{{.DEFAULT_PROXMOX_SNIPPETS_DATASTORE}}')"
+          proxmox_insecure_tls="$(prompt_env PROXMOX_INSECURE_TLS '{{.DEFAULT_PROXMOX_INSECURE_TLS}}')"
 
           echo
           echo 'Using Proxmox configuration:'
@@ -381,7 +392,264 @@ tasks:
           echo "  PROXMOX_HOST=${proxmox_host}"
           echo "  PROXMOX_SSH_USER=${proxmox_ssh_user}"
           echo "  PVE_REALM=${pve_realm}"
+          echo "  PROXMOX_TEMPLATE_DATASTORE=${proxmox_template_datastore}"
+          echo "  PROXMOX_VM_DATASTORE=${proxmox_vm_datastore}"
+          echo "  PROXMOX_SNIPPETS_DATASTORE=${proxmox_snippets_datastore}"
+          echo "  PROXMOX_INSECURE_TLS=${proxmox_insecure_tls}"
+          echo '  PROXMOX_NODE_NAME will be auto-discovered after SSH access is available.'
 
+
+  proxmox:discover:
+    desc: Discover Proxmox node metadata over SSH and write it to state/configs/.env
+    deps:
+      - proxmox:dirs
+      - secrets:ssh:keys
+    cmds:
+      - |
+          # ================================================================
+          # Task: proxmox:discover
+          # Purpose:
+          #   Discover node metadata from the Proxmox host and persist it into
+          #   the repo-managed env file for downstream Terraform tasks.
+          #
+          # Notes:
+          #   - Requires SSH key access to the Proxmox host.
+          #   - Writes PROXMOX_NODE_NAME and sensible datastore defaults.
+          # ================================================================
+          set -euo pipefail
+
+          env_file='{{.ENV_FILE}}'
+          ssh_key='{{.SSH_KEY_PATH}}'
+          known_hosts='{{.SSH_KNOWN_HOSTS}}'
+
+          if [ ! -f "${env_file}" ]; then
+            echo "Required env file not found: ${env_file}" >&2
+            exit 1
+          fi
+
+          # shellcheck disable=SC1090
+          . "${env_file}"
+
+          : "${PROXMOX_HOST_IP:?PROXMOX_HOST_IP must be set in ${env_file}}"
+          : "${PROXMOX_SSH_USER:?PROXMOX_SSH_USER must be set in ${env_file}}"
+
+          upsert_env() {
+            key="$1"
+            value="$2"
+            file="$3"
+            if grep -qE "^${key}=" "${file}"; then
+              awk -v key="${key}" -v value="${value}" '
+                BEGIN { updated = 0 }
+                $0 ~ "^" key "=" {
+                  print key "=" value
+                  updated = 1
+                  next
+                }
+                { print }
+                END {
+                  if (updated == 0) {
+                    print key "=" value
+                  }
+                }
+              ' "${file}" > "${file}.tmp"
+              mv "${file}.tmp" "${file}"
+            else
+              printf '%s=%s\n' "${key}" "${value}" >> "${file}"
+            fi
+          }
+
+          ssh_target="${PROXMOX_SSH_USER}@${PROXMOX_HOST_IP}"
+          remote_info="$({
+            ssh \
+              -i "${ssh_key}" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile="${known_hosts}" \
+              "${ssh_target}" \
+              'node_name="$(hostname -s)"; pve_version=""; if command -v pvesh >/dev/null 2>&1; then pve_version="$(pvesh get /version --output-format json 2>/dev/null | jq -r ".release // empty")"; fi; printf "NODE_NAME=%s\nPVE_VERSION=%s\n" "$node_name" "$pve_version"'
+          })"
+
+          proxmox_node_name="$(printf '%s\n' "${remote_info}" | awk -F= '/^NODE_NAME=/{print $2}' | tail -n 1)"
+          pve_version="$(printf '%s\n' "${remote_info}" | awk -F= '/^PVE_VERSION=/{print $2}' | tail -n 1)"
+
+          if [ -z "${proxmox_node_name}" ]; then
+            echo 'Failed to discover PROXMOX_NODE_NAME over SSH.' >&2
+            exit 1
+          fi
+
+          upsert_env PROXMOX_NODE_NAME "${proxmox_node_name}" "${env_file}"
+          upsert_env PROXMOX_HOST "${PROXMOX_HOST:-${PROXMOX_HOST_IP}}" "${env_file}"
+          upsert_env PROXMOX_TEMPLATE_DATASTORE "${PROXMOX_TEMPLATE_DATASTORE:-{{.DEFAULT_PROXMOX_TEMPLATE_DATASTORE}}}" "${env_file}"
+          upsert_env PROXMOX_VM_DATASTORE "${PROXMOX_VM_DATASTORE:-{{.DEFAULT_PROXMOX_VM_DATASTORE}}}" "${env_file}"
+          upsert_env PROXMOX_SNIPPETS_DATASTORE "${PROXMOX_SNIPPETS_DATASTORE:-{{.DEFAULT_PROXMOX_SNIPPETS_DATASTORE}}}" "${env_file}"
+          upsert_env PROXMOX_INSECURE_TLS "${PROXMOX_INSECURE_TLS:-{{.DEFAULT_PROXMOX_INSECURE_TLS}}}" "${env_file}"
+
+          echo 'Discovered Proxmox configuration:'
+          echo "  PROXMOX_NODE_NAME=${proxmox_node_name}"
+          echo "  PROXMOX_HOST=${PROXMOX_HOST:-${PROXMOX_HOST_IP}}"
+          if [ -n "${pve_version}" ]; then
+            echo "  PVE_VERSION=${pve_version}"
+          fi
+
+  proxmox:templates-bootstrap:
+    desc: Download cloud images on Proxmox and build the reusable VM templates
+    deps:
+      - proxmox:dirs
+      - proxmox:env:ensure
+      - secrets:ssh:keys
+      - proxmox:ssh:authorise
+      - proxmox:discover
+    cmds:
+      - |
+          # ================================================================
+          # Task: proxmox:templates-bootstrap
+          # Purpose:
+          #   Build the stable VM template layer directly on the Proxmox host.
+          #
+          # Notes:
+          #   - Uses wget on the Proxmox host because that path has already
+          #     proven reliable in this environment.
+          #   - Downloads source template files only when they do not already
+          #     exist on the Proxmox host.
+          #   - Updates the local env file with discovered template IDs so
+          #     Terraform can consume them through TF_VAR maps.
+          # ================================================================
+          set -euo pipefail
+
+          env_file='{{.ENV_FILE}}'
+          ssh_key='{{.SSH_KEY_PATH}}'
+          known_hosts='{{.SSH_KNOWN_HOSTS}}'
+
+          if [ ! -f "${env_file}" ]; then
+            echo "Required env file not found: ${env_file}" >&2
+            exit 1
+          fi
+
+          # shellcheck disable=SC1090
+          . "${env_file}"
+
+          : "${PROXMOX_HOST_IP:?PROXMOX_HOST_IP must be set in ${env_file}}"
+          : "${PROXMOX_SSH_USER:?PROXMOX_SSH_USER must be set in ${env_file}}"
+          : "${PROXMOX_NODE_NAME:?PROXMOX_NODE_NAME must be set in ${env_file}}"
+
+          upsert_env() {
+            key="$1"
+            value="$2"
+            file="$3"
+            if grep -qE "^${key}=" "${file}"; then
+              awk -v key="${key}" -v value="${value}" '
+                BEGIN { updated = 0 }
+                $0 ~ "^" key "=" {
+                  print key "=" value
+                  updated = 1
+                  next
+                }
+                { print }
+                END {
+                  if (updated == 0) {
+                    print key "=" value
+                  }
+                }
+              ' "${file}" > "${file}.tmp"
+              mv "${file}.tmp" "${file}"
+            else
+              printf '%s=%s\n' "${key}" "${value}" >> "${file}"
+            fi
+          }
+
+          ssh_target="${PROXMOX_SSH_USER}@${PROXMOX_HOST_IP}"
+
+          ssh \
+            -i "${ssh_key}" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=accept-new \
+            -o UserKnownHostsFile="${known_hosts}" \
+            "${ssh_target}" \
+            "NODE_NAME='${PROXMOX_NODE_NAME}' TEMPLATE_DATASTORE='${PROXMOX_TEMPLATE_DATASTORE:-local}' VM_DATASTORE='${PROXMOX_VM_DATASTORE:-local-lvm}' UBUNTU24_TEMPLATE_ID='{{.UBUNTU24_TEMPLATE_ID}}' ROCKY9_TEMPLATE_ID='{{.ROCKY9_TEMPLATE_ID}}' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          ubuntu24_img_url='https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img'
+          ubuntu24_img_file='noble-server-cloudimg-amd64.img'
+          rocky9_img_url='https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2'
+          rocky9_img_file='Rocky-9-GenericCloud-Base.latest.x86_64.qcow2'
+          ubuntu24_lxc_url='https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64-root.tar.xz'
+          ubuntu24_lxc_file='ubuntu-24.04-server-cloudimg-amd64-root.tar.xz'
+
+          iso_dir='/var/lib/vz/template/iso'
+          lxc_dir='/var/lib/vz/template/cache'
+
+          mkdir -p "${iso_dir}" "${lxc_dir}"
+
+          download_if_missing() {
+            target_dir="$1"
+            file_name="$2"
+            source_url="$3"
+
+            if [ -f "${target_dir}/${file_name}" ]; then
+              echo "File already exists, skipping download: ${target_dir}/${file_name}"
+            else
+              echo "Downloading ${file_name} to ${target_dir}"
+              wget -O "${target_dir}/${file_name}" "${source_url}"
+            fi
+          }
+
+          download_if_missing "${iso_dir}" "${ubuntu24_img_file}" "${ubuntu24_img_url}"
+          download_if_missing "${iso_dir}" "${rocky9_img_file}" "${rocky9_img_url}"
+          download_if_missing "${lxc_dir}" "${ubuntu24_lxc_file}" "${ubuntu24_lxc_url}"
+
+          build_template() {
+            template_id="$1"
+            template_name="$2"
+            disk_file="$3"
+            ci_user="$4"
+            description="$5"
+
+            if qm status "${template_id}" >/dev/null 2>&1; then
+              qm stop "${template_id}" >/dev/null 2>&1 || true
+              qm destroy "${template_id}" --destroy-unreferenced-disks 1 --purge 1 >/dev/null 2>&1 || true
+            fi
+
+            qm create "${template_id}" \
+              --name "${template_name}" \
+              --memory 2048 \
+              --cores 2 \
+              --cpu x86-64-v2-AES \
+              --machine q35 \
+              --bios ovmf \
+              --scsihw virtio-scsi-pci \
+              --agent enabled=1 \
+              --net0 virtio,bridge=vmbr0 \
+              --serial0 socket \
+              --vga serial0 \
+              --ostype l26 \
+              --description "${description}"
+
+            qm set "${template_id}" --efidisk0 "${VM_DATASTORE}:0,efitype=4m,pre-enrolled-keys=0"
+            qm importdisk "${template_id}" "${iso_dir}/${disk_file}" "${VM_DATASTORE}" --format qcow2
+            qm set "${template_id}" --scsi0 "${VM_DATASTORE}:vm-${template_id}-disk-1,discard=on,iothread=1,ssd=1"
+            qm set "${template_id}" --boot order=scsi0
+            qm set "${template_id}" --ide2 "${VM_DATASTORE}:cloudinit"
+            qm set "${template_id}" --ciuser "${ci_user}"
+            qm template "${template_id}"
+          }
+
+          build_template "${ROCKY9_TEMPLATE_ID}" 'tpl-rocky9-cloudinit' "${rocky9_img_file}" 'rocky' 'Task-managed Rocky Linux 9 cloud-init template'
+          build_template "${UBUNTU24_TEMPLATE_ID}" 'tpl-ubuntu24-cloudinit' "${ubuntu24_img_file}" 'ubuntu' 'Task-managed Ubuntu 24.04 cloud-init template'
+
+          printf 'UBUNTU24_TEMPLATE_ID=%s\n' "${UBUNTU24_TEMPLATE_ID}"
+          printf 'ROCKY9_TEMPLATE_ID=%s\n' "${ROCKY9_TEMPLATE_ID}"
+          printf 'UBUNTU24_LXC_TEMPLATE_FILE_ID=%s/%s:vztmpl/%s\n' "${NODE_NAME}" "${TEMPLATE_DATASTORE}" "${ubuntu24_lxc_file}"
+          REMOTE_SCRIPT
+
+          upsert_env PROXMOX_VM_TEMPLATE_UBUNTU24_ID '{{.UBUNTU24_TEMPLATE_ID}}' "${env_file}"
+          upsert_env PROXMOX_VM_TEMPLATE_ROCKY9_ID '{{.ROCKY9_TEMPLATE_ID}}' "${env_file}"
+          upsert_env PROXMOX_LXC_TEMPLATE_UBUNTU24_FILE_ID "${PROXMOX_NODE_NAME}/${PROXMOX_TEMPLATE_DATASTORE:-local}:vztmpl/ubuntu-24.04-server-cloudimg-amd64-root.tar.xz" "${env_file}"
+
+          echo 'Template bootstrap complete.'
+          echo "  PROXMOX_VM_TEMPLATE_ROCKY9_ID={{.ROCKY9_TEMPLATE_ID}}"
+          echo "  PROXMOX_VM_TEMPLATE_UBUNTU24_ID={{.UBUNTU24_TEMPLATE_ID}}"
+          echo "  PROXMOX_LXC_TEMPLATE_UBUNTU24_FILE_ID=${PROXMOX_NODE_NAME}/${PROXMOX_TEMPLATE_DATASTORE:-local}:vztmpl/ubuntu-24.04-server-cloudimg-amd64-root.tar.xz"
+          
   proxmox:ssh:authorise:
     desc: Ensure the repo SSH key can access the Proxmox host
     cmds:

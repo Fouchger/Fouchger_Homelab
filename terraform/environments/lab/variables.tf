@@ -22,12 +22,12 @@ variable "proxmox_insecure_tls" {
 }
 
 variable "proxmox_node_name" {
-  description = "Default Proxmox node used for downloads and guest placement"
+  description = "Default Proxmox node used for guest placement and optional bootstrap downloads"
   type        = string
 }
 
 variable "proxmox_template_datastore" {
-  description = "Datastore used for cloud images and LXC templates"
+  description = "Datastore used for cloud images and LXC templates during bootstrap workflows"
   type        = string
   default     = "local"
 }
@@ -64,4 +64,25 @@ variable "default_dns_servers" {
   description = "Default DNS servers injected into cloud-init for VMs"
   type        = list(string)
   default     = ["1.1.1.1", "9.9.9.9"]
+}
+
+variable "enable_template_bootstrap" {
+  description = "Allow Terraform to download cloud images and build template artefacts on Proxmox"
+  type        = bool
+  default     = false
+}
+
+variable "vm_template_ids" {
+  description = "Existing Proxmox VM template IDs keyed by image key for steady-state service provisioning"
+  type        = map(number)
+  default = {
+    rocky9   = 9001
+    ubuntu24 = 9002
+  }
+}
+
+variable "lxc_template_file_ids" {
+  description = "Existing Proxmox LXC template file IDs keyed by image key for steady-state container provisioning"
+  type        = map(string)
+  default     = {}
 }

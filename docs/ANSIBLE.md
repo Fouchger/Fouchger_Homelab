@@ -1,7 +1,7 @@
 # Ansible Layout
 
 ## Purpose
-This document explains the Ansible structure added to the repository.
+This document explains the Ansible structure used by the repository.
 
 ## Directory structure
 ```text
@@ -26,7 +26,7 @@ ansible/
 
 ## Operating model
 - `base_linux` prepares common Linux systems.
-- `container_runtime` installs Docker Engine and Compose prerequisites.
+- `container_runtime` installs Docker Engine and Compose prerequisites on Ubuntu hosts.
 - `authentik` deploys authentik with Docker Compose.
 - `freeipa_server` installs FreeIPA using the upstream `freeipa.ansible_freeipa` collection.
 
@@ -46,3 +46,5 @@ task ansible:inventory:render
 ## Notes
 - The inventory renderer is deterministic and can be re-run safely.
 - Generated inventory files should remain outside the committed repo state.
+- Host-specific `ansible_user` values come from the Terraform service catalogue rather than static group defaults.
+- The base role now treats VMs and LXCs differently for guest-agent handling.

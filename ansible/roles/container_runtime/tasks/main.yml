@@ -5,6 +5,14 @@
 #   Install Docker Engine and Compose prerequisites on Ubuntu hosts.
 # ================================================================
 
+- name: Verify the container runtime role is applied only to Ubuntu hosts
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == 'Debian'
+      - ansible_distribution == 'Ubuntu'
+    fail_msg: >-
+      The container_runtime role currently supports Ubuntu hosts only.
+
 - name: Ensure container runtime prerequisite packages are present
   ansible.builtin.apt:
     name: "{{ container_runtime_packages }}"

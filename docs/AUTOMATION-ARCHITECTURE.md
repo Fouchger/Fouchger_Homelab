@@ -4,14 +4,15 @@
 This document describes the target automation pattern for the homelab stack.
 
 ## Delivery flow
-The repository now follows a consistent control flow:
+The repository follows a consistent control flow:
 
 1. Task sources operator configuration and secrets.
-2. Terraform provisions the Proxmox guests.
-3. Terraform emits structured guest metadata.
-4. A rendering step converts Terraform outputs into an Ansible inventory file.
-5. Ansible applies base roles and service-specific roles.
-6. Post-build service configuration is applied only after the service is online.
+2. Template bootstrap is treated as a separate lifecycle from service provisioning.
+3. Terraform provisions the Proxmox guests used for live services.
+4. Terraform emits structured guest metadata.
+5. A rendering step converts Terraform outputs into an Ansible inventory file.
+6. Ansible applies base roles and service-specific roles.
+7. Post-build service configuration is applied only after the service is online.
 
 ## Design principles
 - Terraform owns infrastructure lifecycle.
@@ -19,6 +20,7 @@ The repository now follows a consistent control flow:
 - OpenBao remains the source of truth for sensitive runtime material.
 - Identity services run on dedicated VMs rather than on `admin01`.
 - Service definitions are catalog-driven rather than hard-coded sample guests.
+- Steady-state applies should avoid unnecessary dependence on external image downloads.
 
 ## Service placement
 ### authentik
@@ -31,7 +33,10 @@ The repository now follows a consistent control flow:
 - Installed with upstream `ansible-freeipa` roles
 - Used for Linux identity, sudo policy, SSH key distribution, and host access control
 
-## Notes
-- authentik has an official Terraform provider for in-platform configuration, which is a good follow-on once the service VM is stable. citeturn0search0turn0search9
-- FreeIPA publishes supported Ansible roles for server, replica, and client deployment. citeturn0search1turn0search4
-- AWX supports multiple authentication methods, including enterprise authentication options, so the repo should treat application SSO separately from Linux host identity. citeturn0search2turn0search5
+## Platform strategy
+### Template bootstrap
+Template images and template VMs are infrastructure seed artefacts.
+They change infrequently and should be managed deliberately.
+
+### Service lifecycle
+Service VMs should be cloned from known-good template IDs so that normal `terraform apply` runs stay deterministic and operationally simple.

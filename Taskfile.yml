@@ -33,6 +33,17 @@ includes:
     flatten: false
 
 tasks:
+
+  proxmox_discover:
+    desc: Discover and persist Proxmox node metadata into state/configs/.env
+    cmds:
+      - task: proxmox:discover
+
+  proxmox_templates_bootstrap:
+    desc: Download cloud images on Proxmox and build the reusable base templates
+    cmds:
+      - task: proxmox:templates-bootstrap
+
   day1:
     desc: Complete day-1 secrets bootstrap for the homelab
     cmds:

@@ -1,23 +1,18 @@
 # ================================================================
 # File: terraform/environments/lab/outputs.tf
 # Purpose:
-#   Expose downloaded image IDs, provisioned guests, and Ansible inventory.
+#   Expose resolved template identifiers, provisioned guests, and the
+#   generated Ansible inventory for downstream automation.
 # ================================================================
 
-output "vm_image_file_ids" {
-  description = "Downloaded VM image file IDs by image key"
-  value = {
-    for key, file in proxmox_virtual_environment_download_file.vm_images :
-    key => file.id
-  }
+output "resolved_vm_template_ids" {
+  description = "Resolved VM template IDs by image key, including supplied IDs and any Terraform-built templates"
+  value       = local.resolved_vm_template_ids
 }
 
-output "ubuntu_lxc_template_file_ids" {
-  description = "Downloaded Ubuntu LXC template file IDs by release"
-  value = {
-    for key, file in proxmox_virtual_environment_download_file.ubuntu_lxc_templates :
-    key => file.id
-  }
+output "resolved_lxc_template_file_ids" {
+  description = "Resolved LXC template file IDs by image key, including supplied IDs and any Terraform-downloaded template files"
+  value       = local.resolved_lxc_template_file_ids
 }
 
 output "vm_ids" {
@@ -38,7 +33,7 @@ output "container_ids" {
 
 output "service_catalog" {
   description = "Resolved service metadata used to provision guests"
-  value       = local.services
+  value       = local.inventory_services
 }
 
 output "ansible_inventory" {

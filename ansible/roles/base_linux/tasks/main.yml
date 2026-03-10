@@ -10,12 +10,18 @@
     name: "{{ base_linux_packages }}"
     state: present
 
-- name: Ensure qemu-guest-agent is enabled when installed
+- name: Ensure qemu-guest-agent package is present only on virtual machines
+  ansible.builtin.package:
+    name: qemu-guest-agent
+    state: present
+  when: ansible_virtualization_type != 'lxc'
+
+- name: Ensure qemu-guest-agent is enabled when running on virtual machines
   ansible.builtin.service:
     name: qemu-guest-agent
     state: started
     enabled: true
-  failed_when: false
+  when: ansible_virtualization_type != 'lxc'
 
 - name: Ensure system timezone is configured
   community.general.timezone:
