@@ -22,12 +22,6 @@ includes:
   proxmox:
     taskfile: ./tasks/proxmox.Taskfile.yml
     flatten: true
-  terraform:
-    taskfile: ./tasks/terraform.Taskfile.yml
-    flatten: true
-  ansible:
-    taskfile: ./tasks/ansible.Taskfile.yml
-    flatten: true
   bootstrap_tasks:
     taskfile: ./tasks/bootstrap.Taskfile.yml
     flatten: false
