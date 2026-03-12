@@ -25,6 +25,9 @@ includes:
   bootstrap_tasks:
     taskfile: ./tasks/bootstrap.Taskfile.yml
     flatten: false
+  packer_tasks:
+    taskfile: ./tasks/packer.Taskfile.yml
+    flatten: true
 
 tasks:
 
@@ -37,6 +40,11 @@ tasks:
     desc: Download cloud images on Proxmox and build the reusable base templates
     cmds:
       - task: proxmox:templates-bootstrap
+
+  proxmox_templates_packer:
+    desc: Build curated Proxmox VM templates using Packer
+    cmds:
+      - task: packer:build:all
 
   day1:
     desc: Complete day-1 secrets bootstrap for the homelab

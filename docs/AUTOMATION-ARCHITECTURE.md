@@ -1,42 +1,35 @@
 # Automation Architecture
 
 ## Purpose
-This document describes the target automation pattern for the homelab stack.
+This document summarises the intended delivery model for the homelab automation stack.
 
 ## Delivery flow
-The repository follows a consistent control flow:
+1. Task provides the operator entry points.
+2. Secrets and local operator state are bootstrapped first.
+3. Proxmox foundation access is prepared through the API-user workflow.
+4. Packer builds the preferred VM template catalogue for Linux, network, appliance, and Windows guests.
+5. Proxmox host-side template bootstrap remains available as a fallback seeding path.
+6. Terraform clones and wires workloads from stable Proxmox template identifiers.
+7. Terraform outputs feed inventory generation for later configuration management.
+8. Ansible applies the desired base operating system and service roles.
+9. Service providers and APIs are configured only after the base platform is reachable.
 
-1. Task sources operator configuration and secrets.
-2. Template bootstrap is treated as a separate lifecycle from service provisioning.
-3. Terraform provisions the Proxmox guests used for live services.
-4. Terraform emits structured guest metadata.
-5. A rendering step converts Terraform outputs into an Ansible inventory file.
-6. Ansible applies base roles and service-specific roles.
-7. Post-build service configuration is applied only after the service is online.
+## Practical repository split
+### Active root layer
+The active root layer is the control plane for operator workflows, bootstrap, secrets, Proxmox access, and curated template builds.
 
-## Design principles
-- Terraform owns infrastructure lifecycle.
-- Ansible owns operating system and application configuration.
-- OpenBao remains the source of truth for sensitive runtime material.
-- Identity services run on dedicated VMs rather than on `admin01`.
-- Service definitions are catalog-driven rather than hard-coded sample guests.
-- Steady-state applies should avoid unnecessary dependence on external image downloads.
+### Archived layer
+The `1 archieve/` layer preserves the earlier Terraform and Ansible implementation so it can be selectively reintroduced once the root repo shape is settled.
 
-## Service placement
-### authentik
-- Dedicated Ubuntu VM
-- Docker Compose deployment pattern
-- Used for application SSO and federation
+## Template strategy
+The current preferred template catalogue is maintained in `packer/` and now covers:
 
-### FreeIPA
-- Dedicated RHEL-compatible VM preferred
-- Installed with upstream `ansible-freeipa` roles
-- Used for Linux identity, sudo policy, SSH key distribution, and host access control
+- Ubuntu 22.04, 24.04, and 25.04
+- Rocky Linux 9 and 10
+- Talos Linux 1.12
+- OPNsense 25.7 and OPNsense 26.1
+- Alpine Linux 3.21 and 3.22
+- Windows Server 2022 and 2025
+- Windows 11
 
-## Platform strategy
-### Template bootstrap
-Template images and template VMs are infrastructure seed artefacts.
-They change infrequently and should be managed deliberately.
-
-### Service lifecycle
-Service VMs should be cloned from known-good template IDs so that normal `terraform apply` runs stay deterministic and operationally simple.
+This keeps guest-image lifecycle work separate from service provisioning and gives the later Terraform layer a stable clone source.
