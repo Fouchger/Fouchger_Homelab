@@ -47,7 +47,7 @@ _success() { printf '%s\n' "SUCCESS: $*"; }
 # ----------------------------
 readonly REPO_SLUG="Fouchger/Fouchger_Homelab"
 
-BRANCH="${HOMELAB_BRANCH:-branch2}"
+BRANCH="${HOMELAB_BRANCH:-branch1}"
 TARGET_DIR=""
 ROOT_DIR=""
 NONINTERACTIVE="${NONINTERACTIVE:-0}"
