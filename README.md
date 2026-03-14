@@ -24,7 +24,7 @@ The current identity roadmap is:
 
 ## Repository bootstrap
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fouchger/Fouchger_Homelab/refs/heads/branch1/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fouchger/Fouchger_Homelab/refs/heads/branch2/install.sh)"
 ```
 
 ## Core workflows

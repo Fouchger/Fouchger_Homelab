@@ -1,0 +1,126 @@
+# ##################################################################################################
+# File: tasks/ssh.Taskfile.yml
+# Purpose:
+#   
+#
+# Notes:
+#   - 
+# ##################################################################################################
+
+version: "3"
+
+silent: true
+
+vars:
+  SSH_DIR: '{{.HOME}}/.ssh'
+  SSH_FILE: 'id_ed25519'
+  SSH_KEY_PATH: '{{.SSH_DIR}}/{{.SSH_FILE}}'
+  SSH_PUB_KEY_PATH: '{{.SSH_DIR}}/{{.SSH_FILE}}.pub'
+  ENV_FILE: 'state/configs/.env'
+
+tasks:
+  ssh:all:
+    desc: "Generate the SSH key and authorise it on the Proxmox host"
+    cmds:
+      - task: ssh:key_gen
+      - task: ssh:authorise:proxmox
+
+  ssh:key_gen:
+    desc: "Generate a new SSH key pair"
+    status:
+      - test -f {{.SSH_KEY_PATH}}
+    cmds:
+      - |
+          # ================================================================
+          # Task: ssh_key_gen
+          # Purpose:
+          #   Generate an ed25519 SSH key pair for repository and host access.
+          #
+          # Notes:
+          #   - Prompts for an email address to embed as the key comment.
+          #   - Skips execution if the private key already exists.
+          # ================================================================
+          set -euo pipefail
+
+          mkdir -p "{{.SSH_DIR}}"
+
+          read -r -p "SSH user.email (commit author email): " GIT_EMAIL
+
+          ssh-keygen \
+            -t ed25519 \
+            -C "${GIT_EMAIL}" \
+            -f "{{.SSH_KEY_PATH}}" \
+            -N "" >/dev/null
+
+          echo "SSH key pair generated in {{.SSH_KEY_PATH}} and {{.SSH_PUB_KEY_PATH}}"
+
+          eval "$(ssh-agent -s)" >/dev/null
+          ssh-add "{{.SSH_KEY_PATH}}" >/dev/null
+
+  ssh:authorise:proxmox:
+    desc: "Ensure the managed SSH key can access the Proxmox host"
+    deps:
+      - task: proxmox:dirs
+      - task: proxmox:env:ensure
+      - task: ssh:key_gen
+    cmds:
+      - |
+          # ================================================================
+          # Task: authorise:proxmox
+          # Purpose:
+          #   Ensure the managed SSH key can access the Proxmox host.
+          #
+          # Notes:
+          #   - Uses a plain ssh-copy-id command.
+          #   - ssh-copy-id does not duplicate the same key on the remote host.
+          #   - Requires PROXMOX_HOST_IP and PROXMOX_SSH_USER in the env file.
+          # ================================================================
+          set -euo pipefail
+
+          env_file='{{.ENV_FILE}}'
+          ssh_key='{{.SSH_KEY_PATH}}'
+          ssh_pub_key='{{.SSH_PUB_KEY_PATH}}'
+
+          if [ ! -f "${env_file}" ]; then
+            echo "Required env file not found: ${env_file}"
+            exit 1
+          fi
+
+          if [ ! -f "${ssh_key}" ] || [ ! -f "${ssh_pub_key}" ]; then
+            echo "SSH keypair not found under {{.SSH_DIR}}."
+            echo "Run: task ssh_key_gen"
+            exit 1
+          fi
+
+          # shellcheck disable=SC1090
+          . "${env_file}"
+
+          if [ -z "${PROXMOX_HOST_IP:-}" ] || [ -z "${PROXMOX_SSH_USER:-}" ]; then
+            echo "Missing PROXMOX_HOST_IP or PROXMOX_SSH_USER in ${env_file}."
+            exit 1
+          fi
+
+          ssh_target="${PROXMOX_SSH_USER}@${PROXMOX_HOST_IP}"
+
+          if ssh \
+            -i "${ssh_key}" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=5 \
+            "${ssh_target}" \
+            'true' >/dev/null 2>&1; then
+            echo "Managed SSH key already authorised on ${PROXMOX_HOST_IP}."
+            exit 0
+          fi
+
+          echo "Managed SSH key is not yet authorised on ${PROXMOX_HOST_IP}."
+          echo "You may be prompted for the remote account password to seed the key."
+
+          ssh-copy-id -i "${ssh_pub_key}" "${ssh_target}"
+
+          ssh \
+            -i "${ssh_key}" \
+            -o BatchMode=yes \
+            "${ssh_target}" \
+            'true' >/dev/null 2>&1
+
+          echo "Managed SSH key successfully authorised on ${PROXMOX_HOST_IP}."

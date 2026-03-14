@@ -5,7 +5,7 @@
 #
 # Notes:
 #   - This workflow runs locally and connects to Proxmox over SSH using the
-#     repo-managed SSH key under state/secrets/ssh.
+#     same managed SSH key defaults as tasks/ssh.Taskfile.yml.
 #   - Local Proxmox token artefacts are stored only under state/secrets/proxmox.
 #   - A plaintext token env file is written with mode 0600 for local consumer
 #     tooling, and an encrypted JSON snapshot is written when SOPS bootstrap is
@@ -20,24 +20,23 @@
 
 version: '3'
 
-silent: false
+silent: true
 
 includes:
   secrets: ./secrets.Taskfile.yml
 
 vars:
-  ROOT_DIR:
-    sh: pwd
-  CONFIGS_DIR: '{{.ROOT_DIR}}/state/configs'
+  STATE_DIR: state
+  CONFIGS_DIR: '{{.STATE_DIR}}/configs'
   ENV_FILE: '{{.CONFIGS_DIR}}/.env'
 
-  SECRETS_DIR: '{{.ROOT_DIR}}/state/secrets'
-  SSH_DIR: '{{.SECRETS_DIR}}/ssh'
+  SECRETS_DIR: '{{.STATE_DIR}}/secrets'
   PROXMOX_DIR: '{{.SECRETS_DIR}}/proxmox'
 
-  SSH_KEY_NAME: '{{.SSH_KEY_NAME | default "id_ed25519_homelab"}}'
-  SSH_KEY_PATH: '{{.SSH_KEY_PATH | default (printf "%s/%s" .SSH_DIR .SSH_KEY_NAME)}}'
-  SSH_PUB_KEY_PATH: '{{.SSH_PUB_KEY_PATH | default (printf "%s/%s.pub" .SSH_DIR .SSH_KEY_NAME)}}'
+  SSH_DIR: '{{.SSH_DIR | default (printf "%s/.ssh" .HOME)}}'
+  SSH_FILE: '{{.SSH_FILE | default "id_ed25519"}}'
+  SSH_KEY_PATH: '{{.SSH_KEY_PATH | default (printf "%s/%s" .SSH_DIR .SSH_FILE)}}'
+  SSH_PUB_KEY_PATH: '{{.SSH_PUB_KEY_PATH | default (printf "%s/%s.pub" .SSH_DIR .SSH_FILE)}}'
   SSH_KNOWN_HOSTS: '{{.SSH_KNOWN_HOSTS | default (printf "%s/known_hosts" .SSH_DIR)}}'
 
   TOKEN_ENV_FILE: '{{.TOKEN_ENV_FILE | default (printf "%s/proxmox-api-token.env" .PROXMOX_DIR)}}'
@@ -70,8 +69,7 @@ tasks:
       - task: proxmox:tools:check
       - task: proxmox:dirs
       - task: proxmox:env:ensure
-      - task: secrets:ssh:keys
-      - task: proxmox:ssh:authorise
+      - task: ssh:all
       - task: proxmox:discover
       - |
           # ############################################################
@@ -149,7 +147,7 @@ tasks:
 
           shell_quote() {
             printf "'"
-            printf '%s' "$1" | sed "s/'/'\\''/g"
+            printf '%s' "$1" | sed "s/'/'\\\\''/g"
             printf "'"
           }
 
@@ -303,8 +301,8 @@ tasks:
     cmds:
       - |
           set -euo pipefail
-          mkdir -p '{{.PROXMOX_DIR}}' '{{.CONFIGS_DIR}}' '{{.SSH_DIR}}'
-          chmod 700 '{{.SECRETS_DIR}}' '{{.SSH_DIR}}' '{{.PROXMOX_DIR}}' || true
+          mkdir -p '{{.PROXMOX_DIR}}' '{{.CONFIGS_DIR}}'
+          chmod 700 '{{.SECRETS_DIR}}' '{{.PROXMOX_DIR}}' || true
           echo 'Ensured Proxmox directories exist under state/secrets'
 
   proxmox:tools:check:
@@ -398,12 +396,11 @@ tasks:
           echo "  PROXMOX_INSECURE_TLS=${proxmox_insecure_tls}"
           echo '  PROXMOX_NODE_NAME will be auto-discovered after SSH access is available.'
 
-
   proxmox:discover:
     desc: Discover Proxmox node metadata over SSH and write it to state/configs/.env
     deps:
       - proxmox:dirs
-      - secrets:ssh:keys
+      - ssh:key_gen
     cmds:
       - |
           # ================================================================
@@ -496,9 +493,9 @@ tasks:
     deps:
       - proxmox:dirs
       - proxmox:env:ensure
-      - secrets:ssh:keys
-      - proxmox:ssh:authorise
-      - proxmox:discover
+      - ssh:keys
+      - ssh:authorise
+      - ssh:authorise:proxmox
     cmds:
       - |
           # ================================================================
@@ -640,98 +637,3 @@ tasks:
           printf 'ROCKY9_TEMPLATE_ID=%s\n' "${ROCKY9_TEMPLATE_ID}"
           printf 'UBUNTU24_LXC_TEMPLATE_FILE_ID=%s/%s:vztmpl/%s\n' "${NODE_NAME}" "${TEMPLATE_DATASTORE}" "${ubuntu24_lxc_file}"
           REMOTE_SCRIPT
-
-          upsert_env PROXMOX_VM_TEMPLATE_UBUNTU24_ID '{{.UBUNTU24_TEMPLATE_ID}}' "${env_file}"
-          upsert_env PROXMOX_VM_TEMPLATE_ROCKY9_ID '{{.ROCKY9_TEMPLATE_ID}}' "${env_file}"
-          upsert_env PROXMOX_LXC_TEMPLATE_UBUNTU24_FILE_ID "${PROXMOX_NODE_NAME}/${PROXMOX_TEMPLATE_DATASTORE:-local}:vztmpl/ubuntu-24.04-server-cloudimg-amd64-root.tar.xz" "${env_file}"
-
-          echo 'Template bootstrap complete.'
-          echo "  PROXMOX_VM_TEMPLATE_ROCKY9_ID={{.ROCKY9_TEMPLATE_ID}}"
-          echo "  PROXMOX_VM_TEMPLATE_UBUNTU24_ID={{.UBUNTU24_TEMPLATE_ID}}"
-          echo "  PROXMOX_LXC_TEMPLATE_UBUNTU24_FILE_ID=${PROXMOX_NODE_NAME}/${PROXMOX_TEMPLATE_DATASTORE:-local}:vztmpl/ubuntu-24.04-server-cloudimg-amd64-root.tar.xz"
-          
-  proxmox:ssh:authorise:
-    desc: Ensure the repo SSH key can access the Proxmox host
-    cmds:
-      - |
-          # ================================================================
-          # Task: proxmox:ssh:authorise
-          # Purpose:
-          #   Ensure the repo-managed SSH key can access the Proxmox host.
-          #
-          # Notes:
-          #   - Uses a plain ssh-copy-id command.
-          #   - ssh-copy-id will not duplicate the same key if it already
-          #     exists on the remote host.
-          # ================================================================
-          set -euo pipefail
-
-          env_file='{{.ENV_FILE}}'
-          ssh_key='{{.SSH_KEY_PATH}}'
-          ssh_pub_key='{{.SSH_PUB_KEY_PATH}}'
-
-          if [ ! -f "${env_file}" ]; then
-            echo "Required env file not found: ${env_file}"
-            exit 1
-          fi
-
-          if [ ! -f "${ssh_key}" ] || [ ! -f "${ssh_pub_key}" ]; then
-            echo 'SSH keypair not found under {{.SSH_DIR}}.'
-            echo 'Run: task secrets:ssh:keys'
-            exit 1
-          fi
-
-          # shellcheck disable=SC1090
-          . "${env_file}"
-
-          if [ -z "${PROXMOX_HOST_IP:-}" ] || [ -z "${PROXMOX_SSH_USER:-}" ]; then
-            echo "Missing PROXMOX_HOST_IP or PROXMOX_SSH_USER in ${env_file}."
-            exit 1
-          fi
-
-          ssh_target="${PROXMOX_SSH_USER}@${PROXMOX_HOST_IP}"
-
-          if ssh \
-            -i "${ssh_key}" \
-            -o BatchMode=yes \
-            "${ssh_target}" \
-            'true' >/dev/null 2>&1; then
-            echo "Repo SSH key already authorised on ${PROXMOX_HOST_IP}."
-            exit 0
-          fi
-
-          echo "Repo SSH key is not yet authorised on ${PROXMOX_HOST_IP}."
-          echo 'You may be prompted for the remote account password to seed the key.'
-
-          # Use the same simple ssh-copy-id form that worked manually.
-          ssh-copy-id -i "${ssh_pub_key}" "${ssh_target}"
-
-          ssh \
-            -i "${ssh_key}" \
-            -o BatchMode=yes \
-            "${ssh_target}" \
-            'true' >/dev/null 2>&1
-
-          echo "Repo SSH key successfully authorised on ${PROXMOX_HOST_IP}."
-
-  proxmox:status:
-    desc: Show current local Proxmox bootstrap state
-    cmds:
-      - |
-          set -euo pipefail
-          echo 'Env file:        {{.ENV_FILE}}'
-          echo 'SSH private key: {{.SSH_KEY_PATH}}'
-          echo 'SSH public key:  {{.SSH_PUB_KEY_PATH}}'
-          echo 'Known hosts:     {{.SSH_KNOWN_HOSTS}}'
-          echo 'Token file:      {{.TOKEN_ENV_FILE}}'
-          echo 'Encrypted file:  {{.TOKEN_ENC_FILE}}'
-          if [ -f '{{.TOKEN_ENV_FILE}}' ]; then
-            echo 'Token file status: present'
-          else
-            echo 'Token file status: missing'
-          fi
-          if [ -f '{{.TOKEN_ENC_FILE}}' ]; then
-            echo 'Encrypted token status: present'
-          else
-            echo 'Encrypted token status: missing'
-          fi

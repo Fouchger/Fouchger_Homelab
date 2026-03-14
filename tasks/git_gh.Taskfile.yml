@@ -20,7 +20,7 @@
 
 version: "3"
 
-silent: false
+silent: true
 
 vars:
   APT_GET: "apt-get"
@@ -28,20 +28,20 @@ vars:
   USE_PROXMOX_SCRIPT: '{{.USE_PROXMOX_SCRIPT | default "1"}}'
 
 tasks:
-  bootstrap:
+  git_gh:bootstrap:
     desc: Install git + gh (if needed), authenticate gh (Fine-grained PAT), and set up git auth via gh
     cmds:
-      - task: install
-      - task: auth
-      - task: code-server
+      - task: git_gh:install
+      - task: git_gh:auth
+      - task: git_gh:code-server
 
-  install:
+  git_gh:install:
     desc: Install git and gh if missing (Debian/Ubuntu via apt)
     cmds:
-      - task: install:git
-      - task: install:gh
+      - task: git_gh:install:git
+      - task: git_gh:install:gh
 
-  install:git:
+  git_gh:install:git:
     desc: Install git if not installed
     status:
       - command -v git >/dev/null 2>&1
@@ -62,7 +62,7 @@ tasks:
         sudo {{.APT_GET}} update
         sudo {{.APT_GET}} install -y git ca-certificates
 
-  install:gh:
+  git_gh:install:gh:
     desc: Install GitHub CLI (gh) if not installed (via official GitHub apt repo)
     status:
       - command -v gh >/dev/null 2>&1
@@ -95,13 +95,13 @@ tasks:
         sudo {{.APT_GET}} update
         sudo {{.APT_GET}} install -y gh
 
-  auth:
+  git_gh:auth:
     desc: Authenticate gh using a Fine-grained PAT (if needed), then configure git to use gh
     cmds:
-      - task: auth:gh
-      - task: auth:git
+      - task: git_gh:auth:gh
+      - task: git_gh:auth:git
 
-  auth:gh:
+  git_gh:auth:gh:
     desc: Authenticate gh against GitHub using a Fine-grained personal access token
     cmds:
       - |
@@ -139,7 +139,7 @@ tasks:
         unset TOKEN
         echo "gh authentication complete."
 
-  auth:git:
+  git_gh:auth:git:
     desc: Configure git identity (user.name/user.email) and set up GitHub HTTPS credentials (via gh or credential helper)
     cmds:
       - |
@@ -211,7 +211,7 @@ tasks:
         unset GH_PASS
         echo "GitHub credentials stored for HTTPS access to {{.GH_HOST}}."
 
-  status:
+  git_gh:status:
     desc: Show current git + gh status (quick diagnostics)
     cmds:
       - |
@@ -222,7 +222,7 @@ tasks:
           gh auth status -h {{.GH_HOST}} || true
         fi
 
-  code-server:
+  git_gh:code-server:
     desc: Install code-server using the Proxmox helper script or the official installer
     cmds:
       - |

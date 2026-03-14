@@ -23,7 +23,7 @@
 
 version: '3'
 
-silent: false
+silent: true
 
 vars:
   APT_GET: 'apt-get'
@@ -39,57 +39,46 @@ env:
   DEBIAN_FRONTEND: '{{.DEBIAN_FRONTEND}}'
 
 tasks:
-  default:
-    desc: Show available bootstrap tasks
-    cmds:
-      - task --taskfile {{.TASKFILE}} --list
-
-  all:
+  apps:all:
     desc: Run the full host bootstrap sequence
     cmds:
-      - task: upgrade
-      - task: python3
-      - task: pipx
-      - task: ansible
-      - task: terraform
-      - task: packer
+      - task: apps:upgrade
+      - task: apps:python3
+      - task: apps:pipx
+      - task: apps:ansible
+      - task: apps:terraform
+      - task: apps:packer
 
-
-  bootstrap:
-    desc: Alias for the full host bootstrap sequence
-    cmds:
-      - task: all
-
-  upgrade:
+  apps:upgrade:
     desc: Upgrade the system package set and clean residual packages
     cmds:
-      - task: apt:update
-      - task: apt:run
+      - task: apps:apt:update
+      - task: apps:apt:run
         vars:
           ARGS: 'full-upgrade -y'
-      - task: apt:run
+      - task: apps:apt:run
         vars:
           ARGS: 'autoremove -y'
-      - task: apt:run
+      - task: apps:apt:run
         vars:
           ARGS: 'autoclean -y'
 
-  python3:
+  apps:python3:
     desc: Install Python 3 runtime and packaging prerequisites for pipx
     cmds:
-      - task: apt:update
-      - task: apt:install
+      - task: apps:apt:update
+      - task: apps:apt:install
         vars:
           PKGS: 'python3 python3-venv python3-pip'
     status:
       - command -v python3 >/dev/null 2>&1
 
-  pipx:
+  apps:pipx:
     desc: Install pipx and ensure the current user path is updated
     cmds:
-      - task: python3
-      - task: apt:update
-      - task: apt:install
+      - task: apps:python3
+      - task: apps:apt:update
+      - task: apps:apt:install
         vars:
           PKGS: 'pipx'
       - pipx ensurepath || true
@@ -97,10 +86,10 @@ tasks:
     status:
       - command -v pipx >/dev/null 2>&1
 
-  ansible:
+  apps:ansible:
     desc: Install or upgrade Ansible in an isolated pipx environment
     cmds:
-      - task: pipx
+      - task: apps:pipx
       - |
         set -euo pipefail
         if pipx list --short 2>/dev/null | grep -qx 'ansible'; then
@@ -117,11 +106,11 @@ tasks:
       - command -v ansible >/dev/null 2>&1
       - ansible --version >/dev/null 2>&1
 
-  hashicorp-repo:
+  apps:hashicorp-repo:
     desc: Configure the HashiCorp apt repository for Terraform and Packer
     cmds:
-      - task: apt:update
-      - task: apt:install
+      - task: apps:apt:update
+      - task: apps:apt:install
         vars:
           PKGS: 'ca-certificates curl gnupg lsb-release'
       - '{{.SUDO}} install -m 0755 -d /etc/apt/keyrings'
@@ -143,33 +132,33 @@ tasks:
         if [ "${current_line}" != "${repo_line}" ]; then
           printf '%s\n' "${repo_line}" | {{.SUDO}} tee '{{.HASHICORP_LIST}}' >/dev/null
         fi
-      - task: apt:update
+      - task: apps:apt:update
     status:
       - test -f '{{.HASHICORP_LIST}}'
 
-  terraform:
+  apps:terraform:
     desc: Install Terraform from the HashiCorp apt repository
     cmds:
-      - task: hashicorp-repo
-      - task: apt:install
+      - task: apps:hashicorp-repo
+      - task: apps:apt:install
         vars:
           PKGS: 'terraform'
       - terraform version
     status:
       - command -v terraform >/dev/null 2>&1
 
-  packer:
+  apps:packer:
     desc: Install Packer from the HashiCorp apt repository
     cmds:
-      - task: hashicorp-repo
-      - task: apt:install
+      - task: apps:hashicorp-repo
+      - task: apps:apt:install
         vars:
           PKGS: 'packer'
       - packer version
     status:
       - command -v packer >/dev/null 2>&1
 
-  apt:wait:
+  apps:apt:wait:
     desc: Wait until apt and dpkg locks are released
     cmds:
       - |
@@ -202,36 +191,36 @@ tasks:
           break
         done
 
-  apt:run:
+  apps:apt:run:
     desc: Run apt-get with lock handling by passing ARGS="..."
     vars:
       ARGS: '{{.ARGS | default ""}}'
     cmds:
-      - task: apt:wait
+      - task: apps:apt:wait
       - |
         set -euo pipefail
         if [ -z '{{.ARGS}}' ]; then
-          echo 'Missing ARGS. Example: task bootstrap:apt:run -- ARGS="update -y"'
+          echo 'Missing ARGS. Example: task apps:apt:run -- ARGS="update -y"'
           exit 1
         fi
         {{.SUDO}} {{.APT_GET}} {{.ARGS}}
 
-  apt:update:
+  apps:apt:update:
     desc: Run apt-get update with lock handling
     cmds:
-      - task: apt:wait
+      - task: apps:apt:wait
       - '{{.SUDO}} {{.APT_GET}} update -y'
 
-  apt:install:
+  apps:apt:install:
     desc: Run apt-get install with lock handling by passing PKGS="..."
     vars:
       PKGS: '{{.PKGS | default ""}}'
     cmds:
-      - task: apt:wait
+      - task: apps:apt:wait
       - |
         set -euo pipefail
         if [ -z '{{.PKGS}}' ]; then
-          echo 'Missing PKGS. Example: task bootstrap:apt:install -- PKGS="curl ca-certificates"'
+          echo 'Missing PKGS. Example: task apps:apt:install -- PKGS="curl ca-certificates"'
           exit 1
         fi
         {{.SUDO}} {{.APT_GET}} install -y {{.PKGS}}
