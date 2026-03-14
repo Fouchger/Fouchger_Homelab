@@ -23,7 +23,7 @@
 
 version: '3'
 
-silent: false
+silent: true
 
 vars:
   APT_GET: 'apt-get'
@@ -132,33 +132,33 @@ tasks:
         if [ "${current_line}" != "${repo_line}" ]; then
           printf '%s\n' "${repo_line}" | {{.SUDO}} tee '{{.HASHICORP_LIST}}' >/dev/null
         fi
-      - task: apt:update
+      - task: apps:apt:update
     status:
       - test -f '{{.HASHICORP_LIST}}'
 
-  terraform:
+  apps:terraform:
     desc: Install Terraform from the HashiCorp apt repository
     cmds:
-      - task: hashicorp-repo
-      - task: apt:install
+      - task: apps:hashicorp-repo
+      - task: apps:apt:install
         vars:
           PKGS: 'terraform'
       - terraform version
     status:
       - command -v terraform >/dev/null 2>&1
 
-  packer:
+  apps:packer:
     desc: Install Packer from the HashiCorp apt repository
     cmds:
-      - task: hashicorp-repo
-      - task: apt:install
+      - task: apps:hashicorp-repo
+      - task: apps:apt:install
         vars:
           PKGS: 'packer'
       - packer version
     status:
       - command -v packer >/dev/null 2>&1
 
-  apt:wait:
+  apps:apt:wait:
     desc: Wait until apt and dpkg locks are released
     cmds:
       - |
@@ -191,36 +191,36 @@ tasks:
           break
         done
 
-  apt:run:
+  apps:apt:run:
     desc: Run apt-get with lock handling by passing ARGS="..."
     vars:
       ARGS: '{{.ARGS | default ""}}'
     cmds:
-      - task: apt:wait
+      - task: apps:apt:wait
       - |
         set -euo pipefail
         if [ -z '{{.ARGS}}' ]; then
-          echo 'Missing ARGS. Example: task bootstrap:apt:run -- ARGS="update -y"'
+          echo 'Missing ARGS. Example: task apps:apt:run -- ARGS="update -y"'
           exit 1
         fi
         {{.SUDO}} {{.APT_GET}} {{.ARGS}}
 
-  apt:update:
+  apps:apt:update:
     desc: Run apt-get update with lock handling
     cmds:
-      - task: apt:wait
+      - task: apps:apt:wait
       - '{{.SUDO}} {{.APT_GET}} update -y'
 
-  apt:install:
+  apps:apt:install:
     desc: Run apt-get install with lock handling by passing PKGS="..."
     vars:
       PKGS: '{{.PKGS | default ""}}'
     cmds:
-      - task: apt:wait
+      - task: apps:apt:wait
       - |
         set -euo pipefail
         if [ -z '{{.PKGS}}' ]; then
-          echo 'Missing PKGS. Example: task bootstrap:apt:install -- PKGS="curl ca-certificates"'
+          echo 'Missing PKGS. Example: task apps:apt:install -- PKGS="curl ca-certificates"'
           exit 1
         fi
         {{.SUDO}} {{.APT_GET}} install -y {{.PKGS}}

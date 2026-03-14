@@ -22,7 +22,7 @@ includes:
   proxmox: 
     taskfile: ./tasks/proxmox.Taskfile.yml
     flatten: true
-  bootstrap_tasks:
+  apps:
     taskfile: ./tasks/apps.Taskfile.yml
     flatten: true
   ssh:
@@ -57,11 +57,11 @@ tasks:
       - task: ssh:all
       - task: git_gh:bootstrap
       - task: proxmox:api-user
-      - task: bootstrap_tasks:upgrade
-      - task: bootstrap_tasks:python3
-      - task: bootstrap_tasks:pipx
-      - task: bootstrap_tasks:ansible
-      - task: bootstrap_tasks:terraform
+      - task: apps:upgrade
+      - task: apps:python3
+      - task: apps:pipx
+      - task: apps:ansible
+      - task: apps:terraform
 
   git_gh::setup:
     desc: Install git and gh, authenticate gh, configure Git auth, and install code-server
