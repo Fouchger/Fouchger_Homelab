@@ -12,82 +12,68 @@ version: "3"
 silent: false
 
 vars:
-  # SECRETS_DIR: 'state/secrets'
-  # SSH_DIR: '{{.SECRETS_DIR}}/ssh'
-  # PROXMOX_DIR: '{{.SECRETS_DIR}}/proxmox'
-  # SSH_KEY_NAME: '{{default "id_ed25519_homelab" .SSH_KEY_NAME}}'
-  # SSH_KEY_PATH: '{{.SSH_DIR}}/{{.SSH_KEY_NAME}}'
-  # SSH_PUB_KEY_PATH: '{{.SSH_KEY_PATH}}.pub'
-  # SSH_KNOWN_HOSTS: '{{.SSH_DIR}}/known_hosts'
-  # SSH_DIR: '{{.SECRETS_DIR}}/ssh'
-
-
-  # SSH_KEY_NAME: '{{.SSH_KEY_NAME | default "id_ed25519_homelab"}}'
-  # SSH_KEY_PATH: '{{.SSH_KEY_PATH | default (printf "%s/%s" .SSH_DIR .SSH_KEY_NAME)}}'
-  # SSH_PUB_KEY_PATH: '{{.SSH_PUB_KEY_PATH | default (printf "%s/%s.pub" .SSH_DIR .SSH_KEY_NAME)}}'
-  # SSH_KNOWN_HOSTS: '{{.SSH_KNOWN_HOSTS | default (printf "%s/known_hosts" .SSH_DIR)}}'
+  SSH_DIR: '{{.HOME}}/.ssh'
+  SSH_FILE: 'id_ed25519'
+  SSH_KEY_PATH: '{{.SSH_DIR}}/{{.SSH_FILE}}'
+  SSH_PUB_KEY_PATH: '{{.SSH_DIR}}/{{.SSH_FILE}}.pub'
+  ENV_FILE: 'state/configs/.env'
 
 tasks:
-  all:
-    - task: ssh:keys
-    - task: ssh:authorise:proxmox
-
-  ssh:keys:
-    desc: Create the repo-managed SSH keypair used by homelab automation
+  ssh:all:
+    desc: "Generate the SSH key and authorise it on the Proxmox host"
     cmds:
-      - |
-        # ############################################################
-        # Task: ssh:keys
-        # Description:
-        #   Create the repo-managed SSH keypair under state/secrets/ssh
-        #   when it does not already exist.
-        # Notes:
-        #   - Private key mode is 0600 and public key mode is 0644.
-        #   - known_hosts file is created with mode 0600 for later use by
-        #     SSH-consuming task sets such as Proxmox bootstrap.
-        # ############################################################
-        set -eu
-        mkdir -p '{{.SSH_DIR}}'
-        chmod 700 '{{.SSH_DIR}}'
+      - task: ssh:key_gen
+      - task: ssh:authorise:proxmox
 
-        if [ -f '{{.SSH_KEY_PATH}}' ] && [ -f '{{.SSH_PUB_KEY_PATH}}' ]; then
-          chmod 600 '{{.SSH_KEY_PATH}}'
-          chmod 644 '{{.SSH_PUB_KEY_PATH}}'
-          touch '{{.SSH_KNOWN_HOSTS}}'
-          chmod 600 '{{.SSH_KNOWN_HOSTS}}'
-          echo 'Repo SSH keypair already present under {{.SSH_DIR}}'
-          exit 0
-        fi
-
-        ssh-keygen -t ed25519 -a 64 -N '' -f '{{.SSH_KEY_PATH}}' -C 'homelab automation key' >/dev/null
-        chmod 600 '{{.SSH_KEY_PATH}}'
-        chmod 644 '{{.SSH_PUB_KEY_PATH}}'
-        touch '{{.SSH_KNOWN_HOSTS}}'
-        chmod 600 '{{.SSH_KNOWN_HOSTS}}'
-        echo 'Created repo SSH keypair under {{.SSH_DIR}}'
-
-  gen-ssh-key:
+  ssh:key_gen:
     desc: "Generate a new SSH key pair"
-    cmds:
-      - 'ssh-keygen -t ed25519 -C "your_email@example.com" -f ~/.ssh/id_ed25519_taskfile'
-      - 'echo "SSH key pair generated in ~/.ssh/id_ed25519_taskfile and ~/.ssh/id_ed25519_taskfile.pub"'
-    # This status check prevents the task from running if the private key already exists
     status:
-      - test -f ~/.ssh/id_ed25519_taskfile
-
-  ssh:authorise:proxmox:
-    desc: Ensure the repo SSH key can access the Proxmox host
+      - test -f {{.SSH_KEY_PATH}}
     cmds:
       - |
           # ================================================================
-          # Task: proxmox:ssh:authorise
+          # Task: ssh_key_gen
           # Purpose:
-          #   Ensure the repo-managed SSH key can access the Proxmox host.
+          #   Generate an ed25519 SSH key pair for repository and host access.
+          #
+          # Notes:
+          #   - Prompts for an email address to embed as the key comment.
+          #   - Skips execution if the private key already exists.
+          # ================================================================
+          set -euo pipefail
+
+          mkdir -p "{{.SSH_DIR}}"
+
+          read -r -p "SSH user.email (commit author email): " GIT_EMAIL
+
+          ssh-keygen \
+            -t ed25519 \
+            -C "${GIT_EMAIL}" \
+            -f "{{.SSH_KEY_PATH}}" \
+            -N "" >/dev/null
+
+          echo "SSH key pair generated in {{.SSH_KEY_PATH}} and {{.SSH_PUB_KEY_PATH}}"
+
+          eval "$(ssh-agent -s)" >/dev/null
+          ssh-add "{{.SSH_KEY_PATH}}" >/dev/null
+
+  ssh:authorise:proxmox:
+    desc: "Ensure the managed SSH key can access the Proxmox host"
+    deps:
+      - task: proxmox:dirs
+      - task: proxmox:env:ensure
+      - task: ssh:key_gen
+    cmds:
+      - |
+          # ================================================================
+          # Task: authorise:proxmox
+          # Purpose:
+          #   Ensure the managed SSH key can access the Proxmox host.
           #
           # Notes:
           #   - Uses a plain ssh-copy-id command.
-          #   - ssh-copy-id will not duplicate the same key if it already
-          #     exists on the remote host.
+          #   - ssh-copy-id does not duplicate the same key on the remote host.
+          #   - Requires PROXMOX_HOST_IP and PROXMOX_SSH_USER in the env file.
           # ================================================================
           set -euo pipefail
 
@@ -101,8 +87,8 @@ tasks:
           fi
 
           if [ ! -f "${ssh_key}" ] || [ ! -f "${ssh_pub_key}" ]; then
-            echo 'SSH keypair not found under {{.SSH_DIR}}.'
-            echo 'Run: task secrets:ssh:keys'
+            echo "SSH keypair not found under {{.SSH_DIR}}."
+            echo "Run: task ssh_key_gen"
             exit 1
           fi
 
@@ -119,16 +105,16 @@ tasks:
           if ssh \
             -i "${ssh_key}" \
             -o BatchMode=yes \
+            -o ConnectTimeout=5 \
             "${ssh_target}" \
             'true' >/dev/null 2>&1; then
-            echo "Repo SSH key already authorised on ${PROXMOX_HOST_IP}."
+            echo "Managed SSH key already authorised on ${PROXMOX_HOST_IP}."
             exit 0
           fi
 
-          echo "Repo SSH key is not yet authorised on ${PROXMOX_HOST_IP}."
-          echo 'You may be prompted for the remote account password to seed the key.'
+          echo "Managed SSH key is not yet authorised on ${PROXMOX_HOST_IP}."
+          echo "You may be prompted for the remote account password to seed the key."
 
-          # Use the same simple ssh-copy-id form that worked manually.
           ssh-copy-id -i "${ssh_pub_key}" "${ssh_target}"
 
           ssh \
@@ -137,4 +123,4 @@ tasks:
             "${ssh_target}" \
             'true' >/dev/null 2>&1
 
-          echo "Repo SSH key successfully authorised on ${PROXMOX_HOST_IP}."
+          echo "Managed SSH key successfully authorised on ${PROXMOX_HOST_IP}."

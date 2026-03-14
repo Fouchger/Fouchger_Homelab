@@ -69,8 +69,7 @@ tasks:
       - task: proxmox:tools:check
       - task: proxmox:dirs
       - task: proxmox:env:ensure
-      - task: ssh:keys
-      - task: proxmox:ssh:authorise
+      - task: ssh:all
       - task: proxmox:discover
       - |
           # ############################################################
@@ -402,7 +401,7 @@ tasks:
     desc: Discover Proxmox node metadata over SSH and write it to state/configs/.env
     deps:
       - proxmox:dirs
-      - ssh:keys
+      - ssh:key_gen
     cmds:
       - |
           # ================================================================

@@ -23,11 +23,11 @@ includes:
     taskfile: ./tasks/proxmox.Taskfile.yml
     flatten: true
   bootstrap_tasks:
-    taskfile: ./tasks/bootstrap.Taskfile.yml
-    flatten: false
+    taskfile: ./tasks/apps.Taskfile.yml
+    flatten: true
   ssh:
     taskfile: ./tasks/ssh.Taskfile.yml
-    flatten: false
+    flatten: true
 
 tasks:
   default:
