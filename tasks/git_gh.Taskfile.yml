@@ -28,14 +28,14 @@ vars:
   USE_PROXMOX_SCRIPT: '{{.USE_PROXMOX_SCRIPT | default "1"}}'
 
 tasks:
-  bootstrap:
+  bootstrap:git_gh:
     desc: Install git + gh (if needed), authenticate gh (Fine-grained PAT), and set up git auth via gh
     cmds:
       - task: install
       - task: auth
       - task: code-server
 
-  install:
+  install:git_gh:
     desc: Install git and gh if missing (Debian/Ubuntu via apt)
     cmds:
       - task: install:git
@@ -95,7 +95,7 @@ tasks:
         sudo {{.APT_GET}} update
         sudo {{.APT_GET}} install -y gh
 
-  auth:
+  auth:git_gh:
     desc: Authenticate gh using a Fine-grained PAT (if needed), then configure git to use gh
     cmds:
       - task: auth:gh

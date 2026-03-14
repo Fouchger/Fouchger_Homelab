@@ -39,11 +39,6 @@ env:
   DEBIAN_FRONTEND: '{{.DEBIAN_FRONTEND}}'
 
 tasks:
-  default:
-    desc: Show available bootstrap tasks
-    cmds:
-      - task --taskfile {{.TASKFILE}} --list
-
   all:
     desc: Run the full host bootstrap sequence
     cmds:
@@ -53,12 +48,6 @@ tasks:
       - task: ansible
       - task: terraform
       - task: packer
-
-
-  bootstrap:
-    desc: Alias for the full host bootstrap sequence
-    cmds:
-      - task: all
 
   upgrade:
     desc: Upgrade the system package set and clean residual packages

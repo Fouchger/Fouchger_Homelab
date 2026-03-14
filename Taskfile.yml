@@ -19,14 +19,21 @@ includes:
   git_gh:
     taskfile: ./tasks/git_gh.Taskfile.yml
     flatten: true
-  proxmox:
+  proxmox: 
     taskfile: ./tasks/proxmox.Taskfile.yml
     flatten: true
   bootstrap_tasks:
     taskfile: ./tasks/bootstrap.Taskfile.yml
     flatten: false
+  ssh:
+    taskfile: ./tasks/ssh.Taskfile.yml
+    flatten: false
 
 tasks:
+  default:
+    desc: Show the available secrets tasks
+    cmds:
+      - task --taskfile {{.TASKFILE}} --list
 
   proxmox_discover:
     desc: Discover and persist Proxmox node metadata into state/configs/.env
@@ -41,15 +48,14 @@ tasks:
   day1:
     desc: Complete day-1 secrets bootstrap for the homelab
     cmds:
-      - task: init
+      - task: secrets:init
       - task: tools:install
       - task: sops:bootstrap
       - task: openbao:bootstrap:standalone
-      - task: report
-      - task: ssh:keys
-      - task: install
-      - task: auth
-      - task: code-server
+      - task: secrets:clean:tmp
+      - task: secrets:report
+      - task: ssh:all
+      - task: git_gh:bootstrap
       - task: proxmox:api-user
       - task: bootstrap_tasks:upgrade
       - task: bootstrap_tasks:python3
@@ -57,12 +63,10 @@ tasks:
       - task: bootstrap_tasks:ansible
       - task: bootstrap_tasks:terraform
 
-  dev_setup:
+  git_gh::setup:
     desc: Install git and gh, authenticate gh, configure Git auth, and install code-server
     cmds:
-      - task: install
-      - task: auth
-      - task: code-server
+      - task: git_gh:bootstrap
 
   proxmox_bootstrap:
     desc: Bootstrap the Proxmox automation user, ACL, and API token
