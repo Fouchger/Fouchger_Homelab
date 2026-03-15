@@ -6,4 +6,4 @@
 creation_rules:
   - path_regex: ^state/secrets/.*\.(ya?ml|json|env|ini|txt|conf)$
     age: >-
-      age1swjeal3qpcx2x98j7alhr5d0x02tu6jxyfzexedjp9untvjgz3sq38m95r,age1kwd3wlatdkmz646dk66jv0ej57q3yvltycx7vrmxeaw6wgasuu9qp5aukn
+      age1ajru6ev5vgjtp2vycwxmacfkk5qljvldqpzcqwfka874vrtt3ykqu7xd85,age19z5wv35fjym5hlv7wq986afmm62705m2hj6lkymakuggfq3xva6senvel7

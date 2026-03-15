@@ -399,7 +399,6 @@ tasks:
   proxmox:discover:
     desc: Discover Proxmox node metadata over SSH and write it to state/configs/.env
     deps:
-      - proxmox:dirs
       - proxmox:env:ensure
       - ssh:authorise:proxmox
     cmds:

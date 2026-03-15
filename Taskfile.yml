@@ -57,6 +57,7 @@ tasks:
       - task: apps:pipx
       - task: apps:ansible
       - task: apps:terraform
+      - task: apps:packer
 
   git_gh::setup:
     desc: Install git and gh, authenticate gh, configure Git auth, and install code-server
