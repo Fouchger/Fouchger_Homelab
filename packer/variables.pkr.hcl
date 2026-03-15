@@ -53,7 +53,7 @@ variable "memory" {
 variable "disk_storage_pool" {
   description = "The name of the storage pool on which to store the disks."
   type        = string
-  default     = "local"
+  default     = "local-lvm"
 }
 
 variable "disk_size" {
@@ -65,7 +65,7 @@ variable "disk_size" {
 variable "disk_format" {
   description = "The drive's backing file's data format."
   type        = string
-  default     = "qcow2"
+  default     = "raw"
 }
 
 variable "disk_type" {
@@ -233,7 +233,7 @@ variable "cloud_init" {
 variable "cloud_init_storage_pool" {
   description = "Name of the Proxmox storage pool to store the Cloud-Init CDROM on."
   type        = string
-  default     = "local"
+  default     = "local-lvm"
 }
 
 variable "additional_iso_files" {

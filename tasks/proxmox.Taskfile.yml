@@ -44,8 +44,9 @@ vars:
 
   DEFAULT_PROXMOX_HOST_IP: '{{.DEFAULT_PROXMOX_HOST_IP | default "192.168.88.250"}}'
   DEFAULT_PROXMOX_HOST: '{{.DEFAULT_PROXMOX_HOST | default "pve01"}}'
+  DEFAULT_PROXMOX_NODE: '{{.DEFAULT_PROXMOX_NODE | default "pve01"}}'
   DEFAULT_PROXMOX_SSH_USER: '{{.DEFAULT_PROXMOX_SSH_USER | default "root"}}'
-  DEFAULT_PVE_REALM: '{{.DEFAULT_PVE_REALM | default "pve"}}'
+  DEFAULT_PVE_REALM: '{{.DEFAULT_PVE_REALM | default "pam"}}'
   DEFAULT_PROXMOX_TEMPLATE_DATASTORE: '{{.DEFAULT_PROXMOX_TEMPLATE_DATASTORE | default "local"}}'
   DEFAULT_PROXMOX_VM_DATASTORE: '{{.DEFAULT_PROXMOX_VM_DATASTORE | default "local-lvm"}}'
   DEFAULT_PROXMOX_SNIPPETS_DATASTORE: '{{.DEFAULT_PROXMOX_SNIPPETS_DATASTORE | default "local"}}'
@@ -56,7 +57,7 @@ vars:
   ROCKY9_TEMPLATE_ID: '{{.ROCKY9_TEMPLATE_ID | default "9001"}}'
   PVE_ROLE_NAME: '{{.PVE_ROLE_NAME | default "AutomationRole"}}'
   PVE_TOKEN_ID: '{{.PVE_TOKEN_ID | default "automation-token"}}'
-  PVE_ROLE_PRIVS: '{{.PVE_ROLE_PRIVS | default "Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Modify,Sys.Console,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.Cloudinit,VM.Config.CPU,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.GuestAgent.Audit,VM.GuestAgent.Unrestricted,VM.Migrate,VM.PowerMgmt"}}'
+  PVE_ROLE_PRIVS: '{{.PVE_ROLE_PRIVS | default "Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Modify,Sys.Console,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.Cloudinit,VM.Config.CPU,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.GuestAgent.Audit,VM.GuestAgent.Unrestricted,VM.Migrate,VM.PowerMgmt"}}'
 
   SOPS_CONFIG_FILE: '{{.ROOT_DIR}}/.sops.yaml'
   AGE_KEYS_FILE: '{{.SECRETS_DIR}}/age/keys.txt'
@@ -377,6 +378,7 @@ tasks:
 
           proxmox_host_ip="$(prompt_env PROXMOX_HOST_IP '{{.DEFAULT_PROXMOX_HOST_IP}}')"
           proxmox_host="$(prompt_env PROXMOX_HOST '{{.DEFAULT_PROXMOX_HOST}}')"
+          proxmox_node="$(prompt_env PROXMOX_NODE '{{.DEFAULT_PROXMOX_NODE}}')"
           proxmox_ssh_user="$(prompt_env PROXMOX_SSH_USER '{{.DEFAULT_PROXMOX_SSH_USER}}')"
           pve_realm="$(prompt_env PVE_REALM '{{.DEFAULT_PVE_REALM}}')"
           proxmox_template_datastore="$(prompt_env PROXMOX_TEMPLATE_DATASTORE '{{.DEFAULT_PROXMOX_TEMPLATE_DATASTORE}}')"
