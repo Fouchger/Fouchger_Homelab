@@ -81,3 +81,4 @@ terraform.rc
 
 # Local Packer build variables
 packer/packer.pkrvars.hcl
+packer/downloaded_iso_path/
