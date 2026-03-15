@@ -80,4 +80,4 @@ terraform.rc
 # planout
 
 # Local Packer build variables
-packer/local.auto.pkrvars.hcl
+packer/packer.pkrvars.hcl

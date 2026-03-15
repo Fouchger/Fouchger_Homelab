@@ -28,6 +28,9 @@ includes:
   ssh:
     taskfile: ./tasks/ssh.Taskfile.yml
     flatten: true
+  packer:
+    taskfile: ./tasks/packer.Taskfile.yml
+    flatten: true
 
 tasks:
   default:
