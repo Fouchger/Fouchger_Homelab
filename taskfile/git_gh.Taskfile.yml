@@ -19,22 +19,6 @@ silent: true
 
 vars:
   TASKFILE: '{{.TASKFILE | default "taskfile/git_gh.Taskfile.yml"}}'
-  ROOT_DIR: '{{.ROOT_DIR | default "."}}'
-
-  CONFIG_DIR: '{{.ROOT_DIR}}/state/config'
-  CONFIG_ENV_FILE: '{{.CONFIG_DIR}}/.env'
-
-  SECRETS_DIR: '{{.ROOT_DIR}}/state/secrets'
-  TMP_DIR: '{{.SECRETS_DIR}}/.tmp'
-  AGE_DIR: '{{.SECRETS_DIR}}/age'
-  AGE_KEYS_FILE: '{{.AGE_DIR}}/keys.txt'
-
-  PASSWORDS_DIR: '{{.SECRETS_DIR}}/passwords'
-  PASSWORDS_ENC_ENV_FILE: '{{.PASSWORDS_DIR}}/passwords.enc.env'
-  PASSWORDS_ENC_ENV_FILE_REL: 'state/secrets/passwords/passwords.enc.env'
-
-  TASK_HELPERS_FILE: '{{.ROOT_DIR}}/scripts/task-helpers/secrets.sh'
-  DEBIAN_FRONTEND: '{{.DEBIAN_FRONTEND | default "noninteractive"}}'
 
 tasks:
   tasklist:
