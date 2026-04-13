@@ -1,0 +1,73 @@
+# ================================================================
+# File: Taskfile.yml
+# Purpose:
+#   Root Task entry point for the homelab repository.
+# Notes:
+#   - Domain task files are included under namespaces.
+# ================================================================
+version: '3'
+
+silent: true
+
+includes:
+  secrets: ./taskfile/secrets.Taskfile.yml
+  git_gh: ./taskfile/git_gh.Taskfile.yml  
+
+tasks:
+  help:
+    desc: Show the top-level homelab operator menu
+    cmds:
+      - |
+        cat <<'EOF'
+
+        ----- Homelab root tasks -----
+
+        Secrets:
+          Setup:
+            task secrets:bootstrap                    Full end-to-end secrets bootstrap
+            task secrets:prepare                      Prepare tooling, SOPS, and OpenBao runtime
+            task secrets:report                       Show the secrets status summary
+            task secrets:design                       Show the secrets design and required inputs
+
+          Useful day-to-day:
+            task secrets:secret:update                Add or update a secret
+            task secrets:secret:view                  View a specific secret
+            task secrets:view:group                   View all secrets in a group
+            task secrets:view:all                     List all encrypted secret files
+            task secrets:edit                         Interactively choose and edit an encrypted file
+            task secrets:edit FILE=state/secrets/...  Edit a specific encrypted file directly
+
+          Operations:
+            task secrets:openbao:status               Show OpenBao status
+            task secrets:openbao:restart:validate     Restart and validate OpenBao
+            task secrets:backup:offline               Create an offline recovery bundle
+            task secrets:backup:raft                  Save a fresh OpenBao raft snapshot
+            task secrets:ops:rotate:keys              Rotate age keys and rekey SOPS files
+            task secrets:ops:renew:certs              Renew OpenBao certificates
+            task secrets:ops:audit                    Generate an audit report
+
+          Destructive:
+            task secrets:destroy CONFIRM_DESTROY=true Remove secrets runtime and state
+            task secrets:purge CONFIRM_DESTROY=true   Remove all secrets tooling and state
+
+        Git and GitHub:
+          Setup:
+            task git_gh:bootstrap                     Install, configure, authenticate, and report
+            task git_gh:install                       Install git and GitHub CLI when missing
+
+          Identity and auth:
+            task git_gh:config:git                    Configure git user.name and user.email
+            task git_gh:auth:gh                       Store GitHub token and authenticate gh
+            task git_gh:auth:git                      Configure git to use gh credentials
+            task git_gh:report                        Show Git and GitHub status summary
+
+            
+
+        ----- End -----
+
+        EOF
+
+  default:
+    desc: Show the top-level help menu
+    cmds:
+      - task: help

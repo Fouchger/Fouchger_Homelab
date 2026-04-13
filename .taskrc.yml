@@ -1,0 +1,8 @@
+# ================================================================
+# File: .taskrc.yml
+# Purpose:
+#   Project-level Task configuration.
+# Notes:
+#   - Enables interactive prompts for required variables.
+# ================================================================
+interactive: true

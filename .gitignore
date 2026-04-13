@@ -1,0 +1,7 @@
+# ================================================================
+# File: .gitignore
+# Purpose:
+#   Ignore generated runtime artefacts and plaintext secrets.
+# ================================================================
+state/
+*.log
