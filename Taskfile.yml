@@ -94,3 +94,9 @@ tasks:
     desc: Show the top-level help menu
     cmds:
       - task: help
+
+  day1:
+    desc: Show the top-level help menu
+    cmds:
+      - task: secrets:bootstrap
+      - task: git_gh:bootstrap
