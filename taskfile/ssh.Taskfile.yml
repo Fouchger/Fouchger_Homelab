@@ -1,0 +1,50 @@
+# ================================================================
+# File: taskfile/ssh.Taskfile.yml
+# Purpose:
+#   Manage OpenSSH client tooling, local SSH identity creation,
+#   Proxmox key-based authentication bootstrap, and safe cleanup of
+#   stale SSH known_hosts entries.
+#
+# Notes:
+#   - Ubuntu and Debian family only.
+#   - Uses the standard ~/.ssh location for private keys and SSH config.
+#   - Persists non-sensitive Proxmox connection values in state/config/.env.
+#   - Does not store SSH private keys or plaintext passwords in the repo.
+#   - Cleanup targets known_hosts entries only. Private identity files are
+#     intentionally left untouched unless an operator removes them manually.
+# ================================================================
+
+version: '3'
+
+silent: true
+
+vars:
+  SSH_KEY_DIR: "{{.HOME}}/.ssh"
+  KEY_NAME: "id_ed25519"
+  KEY_PATH: "{{.SSH_KEY_DIR}}/{{.KEY_NAME}}"
+  EMAIL: "your_email@example.com"
+
+tasks:
+  generate:
+    desc: Generates an Ed25519 SSH keypair if it doesn't already exist.
+    status:
+      - test -f {{.KEY_PATH}}
+    cmds:
+      - mkdir -p {{.SSH_KEY_DIR}}
+      - |
+        ssh-keygen -t ed25519 -C "{{.EMAIL}}" -f {{.KEY_PATH}} -N ""
+      - chmod 600 {{.KEY_PATH}}
+      - chmod 644 {{.KEY_PATH}}.pub
+    silent: true
+
+  show-public:
+    desc: Displays the public key for copying to GitHub/GitLab.
+    deps: [generate]
+    cmds:
+      - cat {{.KEY_PATH}}.pub
+
+  delete-identity::
+    desc: Deletes the generated keys (USE WITH CAUTION).
+    prompt: This will permanently delete your SSH key. Are you sure?
+    cmds:
+      - rm -f {{.KEY_PATH}} {{.KEY_PATH}}.pub

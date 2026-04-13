@@ -35,6 +35,7 @@ vars:
 includes:
   secrets: ./taskfile/secrets.Taskfile.yml
   git_gh: ./taskfile/git_gh.Taskfile.yml
+  ssh: ./taskfile/ssh.Taskfile.yml
 
 tasks:
   help:
