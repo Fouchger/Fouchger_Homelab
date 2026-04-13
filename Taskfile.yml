@@ -9,6 +9,9 @@ version: '3'
 
 silent: true
 
+dotenv:
+  - state/config/.env
+
 vars:
   ROOT_DIR: '{{.ROOT_DIR | default "."}}'
 
@@ -85,7 +88,25 @@ tasks:
             task git_gh:auth:git                      Configure git to use gh credentials
             task git_gh:report                        Show Git and GitHub status summary
 
-            
+        SSH and Proxmox:
+          Setup:
+            task ssh:bootstrap                        Full first-time SSH and Proxmox access bootstrap
+            task ssh:help                             Show the SSH task menu
+            task ssh:report                           Show the SSH and Proxmox connection summary
+
+          Identity and trust:
+            task ssh:generate                         Generate the local Ed25519 SSH key if missing
+            task ssh:show-public                      Show the local public key
+            task ssh:known-hosts:trust:proxmox        Scan, verify, and trust the Proxmox host key
+            task ssh:key:add:proxmox                  Add the local public key to the Proxmox host
+
+          known_hosts operations:
+            task ssh:known-hosts:reconcile            Clean stale local known_hosts entries
+            task ssh:known-hosts:reconcile:remote     Clean known_hosts on the current remote host
+            task ssh:known-hosts:reconcile:proxmox    Run remote known_hosts cleanup on the Proxmox host
+
+          Destructive:
+            task ssh:delete-identity                  Remove the managed local SSH identity
 
         ----- End -----
 
@@ -100,4 +121,5 @@ tasks:
     desc: Show the top-level help menu
     cmds:
       - task: secrets:bootstrap
+      - task: git_gh:bootstrap
       - task: git_gh:bootstrap
