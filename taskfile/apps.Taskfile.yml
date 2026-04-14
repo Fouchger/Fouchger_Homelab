@@ -1,0 +1,451 @@
+# ================================================================
+# File: taskfile/apps.Taskfile.yml
+# Purpose:
+#   Application installation Taskfile for Fouchger homelab systems.
+#
+# Scope:
+#   - System package upgrade with apt lock handling
+#   - Core host application installation
+#   - code-server installation for browser-based administration
+#
+# Notes:
+#   - This file is intended to be included by the root Taskfile under
+#     the `apps:` namespace.
+#   - Designed for Debian/Ubuntu class systems where apt-get is available.
+#   - Tasks are sequenced deliberately where apt operations are involved to
+#     avoid lock contention from parallel dependency execution.
+#   - Git and GitHub authentication belong to taskfile/git_gh.Taskfile.yml.
+#   - Secrets tooling and secrets bootstrap belong to taskfile/secrets.Taskfile.yml.
+# ================================================================
+
+version: '3'
+
+silent: true
+
+vars:
+  TASKFILE: '{{.TASKFILE | default "taskfile/apps.Taskfile.yml"}}'
+  APT_GET: 'apt-get'
+  SUDO: '{{.SUDO | default "sudo"}}'
+  DEBIAN_FRONTEND: 'noninteractive'
+  APT_LOCK_TIMEOUT: '{{.APT_LOCK_TIMEOUT | default "600"}}'
+  APT_LOCK_SLEEP: '{{.APT_LOCK_SLEEP | default "3"}}'
+  HASHICORP_KEYRING: '/etc/apt/keyrings/hashicorp-archive-keyring.gpg'
+  HASHICORP_LIST: '/etc/apt/sources.list.d/hashicorp.list'
+  USE_PROXMOX_SCRIPT: '{{.USE_PROXMOX_SCRIPT | default "1"}}'
+
+  USER_LOCAL_BIN:
+    sh: |
+      if [ -n "${HOME:-}" ]; then
+        printf '%s' "${HOME}/.local/bin"
+      else
+        printf '%s' "$HOME/.local/bin"
+      fi
+
+env:
+  DEBIAN_FRONTEND: '{{.DEBIAN_FRONTEND}}'
+  PATH: '{{.USER_LOCAL_BIN}}:{{env "PATH"}}'
+
+tasks:
+  tasklist:
+    desc: Show available application install tasks
+    cmds:
+      - task --taskfile {{.TASKFILE}} --list
+
+  help:
+    desc: Show the applications operator menu
+    cmds:
+      - |
+        cat <<'EOF_HELP'
+
+        ----- Applications tasks -----
+
+        Setup:
+          task apps:bootstrap            Install the core homelab applications and host prerequisites
+          task apps:upgrade              Upgrade the system package set and clean residual packages
+
+        Individual installs:
+          task apps:code-server          Install code-server
+          task apps:python3              Install Python 3 and packaging prerequisites
+          task apps:pipx                 Install pipx and update the user path
+          task apps:ansible              Install or upgrade Ansible in pipx
+          task apps:ansible:collections  Install repository Ansible collections
+          task apps:terraform            Install Terraform
+          task apps:packer               Install Packer
+          task apps:openssl              Install OpenSSL
+          task apps:arp-scan             Install arp-scan
+
+        Reporting:
+          task apps:status               Show installed application status
+
+        ----- End -----
+
+        EOF_HELP
+
+  bootstrap:
+    desc: Install the core homelab applications and host prerequisites
+    cmds:
+      - task: upgrade
+      - task: code-server
+      - task: python3
+      - task: pipx
+      - task: ansible
+      - task: ansible:collections
+      - task: terraform
+      - task: packer
+      - task: openssl
+      - task: arp-scan
+      - task: status
+
+  upgrade:
+    desc: Upgrade the system package set and clean residual packages
+    cmds:
+      - task: apt:update
+      - task: apt:run
+        vars:
+          ARGS: 'full-upgrade -y'
+      - task: apt:run
+        vars:
+          ARGS: 'autoremove -y'
+      - task: apt:run
+        vars:
+          ARGS: 'autoclean -y'
+
+  apt:wait:
+    desc: Wait until apt and dpkg locks are released
+    cmds:
+      - |
+        set -euo pipefail
+
+        timeout='{{.APT_LOCK_TIMEOUT}}'
+        sleep_s='{{.APT_LOCK_SLEEP}}'
+        start="$(date +%s)"
+
+        locks=(
+          /var/lib/apt/lists/lock
+          /var/lib/dpkg/lock
+          /var/lib/dpkg/lock-frontend
+          /var/cache/apt/archives/lock
+        )
+
+        while true; do
+          if {{.SUDO}} fuser "${locks[@]}" >/dev/null 2>&1; then
+            now="$(date +%s)"
+            if [ $((now - start)) -ge "${timeout}" ]; then
+              echo "Timed out after ${timeout}s waiting for apt or dpkg locks."
+              echo 'Active lock holders, if any:'
+              {{.SUDO}} fuser -v "${locks[@]}" || true
+              exit 1
+            fi
+            echo "apt or dpkg is busy. Waiting ${sleep_s}s..."
+            sleep "${sleep_s}"
+            continue
+          fi
+          break
+        done
+
+  apt:run:
+    desc: Run apt-get with lock handling by passing ARGS="..."
+    vars:
+      ARGS: '{{.ARGS | default ""}}'
+    cmds:
+      - task: apt:wait
+      - |
+        set -euo pipefail
+        if [ -z '{{.ARGS}}' ]; then
+          echo 'Missing ARGS. Example: task apps:apt:run -- ARGS="update"'
+          exit 1
+        fi
+        {{.SUDO}} {{.APT_GET}} {{.ARGS}}
+
+  apt:update:
+    desc: Run apt-get update with lock handling
+    cmds:
+      - task: apt:wait
+      - '{{.SUDO}} {{.APT_GET}} update'
+
+  apt:install:
+    desc: Run apt-get install with lock handling by passing PKGS="..."
+    vars:
+      PKGS: '{{.PKGS | default ""}}'
+    cmds:
+      - task: apt:wait
+      - |
+        set -euo pipefail
+        if [ -z '{{.PKGS}}' ]; then
+          echo 'Missing PKGS. Example: task apps:apt:install -- PKGS="curl ca-certificates"'
+          exit 1
+        fi
+        {{.SUDO}} {{.APT_GET}} install -y {{.PKGS}}
+
+  code-server:
+    desc: Install code-server using the Proxmox helper script or the official installer
+    status:
+      - command -v code-server >/dev/null 2>&1
+    cmds:
+      - |
+        set -euo pipefail
+
+        env_file='{{.CONFIG_ENV_FILE}}'
+        use_proxmox_script='{{.USE_PROXMOX_SCRIPT}}'
+        if [ -f "${env_file}" ]; then
+          use_proxmox_script="$(grep -E '^USE_PROXMOX_SCRIPT=' "${env_file}" | tail -n 1 | cut -d'=' -f2- || true)"
+          use_proxmox_script="${use_proxmox_script:-{{.USE_PROXMOX_SCRIPT}}}"
+        fi
+
+        if [ "${use_proxmox_script}" = '1' ]; then
+          echo 'Installing code-server using the community Proxmox helper script'
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/coder-code-server.sh)"
+        else
+          echo 'Installing code-server using the official installer'
+          curl -fsSL https://code-server.dev/install.sh | sh
+        fi
+
+  python3:
+    desc: Install Python 3 runtime and packaging prerequisites for pipx
+    cmds:
+      - task: apt:update
+      - task: apt:install
+        vars:
+          PKGS: 'python3 python3-venv python3-pip'
+    status:
+      - command -v python3 >/dev/null 2>&1
+
+  pipx:
+    desc: Install pipx and ensure the current user path is updated
+    cmds:
+      - task: python3
+      - task: apt:update
+      - task: apt:install
+        vars:
+          PKGS: 'pipx'
+      - pipx ensurepath || true
+      - python3 -m pipx ensurepath || true
+    status:
+      - command -v pipx >/dev/null 2>&1
+
+  ansible:
+    desc: Install or upgrade Ansible in an isolated pipx environment
+    cmds:
+      - task: pipx
+      - |
+        set -euo pipefail
+
+        current_user="${SUDO_USER:-${USER:-$(id -un)}}"
+        current_home="$(getent passwd "${current_user}" | cut -d: -f6)"
+        if [ -z "${current_home}" ]; then
+          current_home="${HOME}"
+        fi
+
+        user_local_bin="${current_home}/.local/bin"
+        profile_file="${current_home}/.profile"
+        path_line='export PATH="$HOME/.local/bin:$PATH"'
+
+        export PATH="${user_local_bin}:${PATH}"
+
+        if pipx list --short 2>/dev/null | grep -qx 'ansible'; then
+          echo 'Ansible is already installed in pipx.'
+          pipx upgrade ansible || true
+        else
+          pipx install --include-deps ansible
+        fi
+
+        if ! pipx list --include-injected 2>/dev/null | grep -q 'argcomplete'; then
+          pipx inject --include-apps ansible argcomplete
+        fi
+
+        install -d -m 0755 "${user_local_bin}"
+        touch "${profile_file}"
+
+        if ! grep -Fqx "${path_line}" "${profile_file}"; then
+          printf '%s\n' "${path_line}" >> "${profile_file}"
+          echo "Added ~/.local/bin PATH export to ${profile_file} for ${current_user}."
+        else
+          echo "PATH export already present in ${profile_file} for ${current_user}."
+        fi
+
+        if command -v ansible >/dev/null 2>&1; then
+          ansible --version | head -n 1
+        elif [ -x "${user_local_bin}/ansible" ]; then
+          "${user_local_bin}/ansible" --version | head -n 1
+        else
+          echo 'WARNING: Ansible is installed via pipx, but the ansible shim is not on PATH.'
+          echo "Open a new shell or source ${profile_file} to pick up ~/.local/bin."
+          exit 1
+        fi
+    status:
+      - |
+        set -euo pipefail
+        current_user="${SUDO_USER:-${USER:-$(id -un)}}"
+        current_home="$(getent passwd "${current_user}" | cut -d: -f6)"
+        if [ -z "${current_home}" ]; then
+          current_home="${HOME}"
+        fi
+        profile_file="${current_home}/.profile"
+        path_line='export PATH="$HOME/.local/bin:$PATH"'
+        pipx list --short 2>/dev/null | grep -qx 'ansible' && grep -Fqx "${path_line}" "${profile_file}"
+
+  ansible:collections:
+    desc: Install or upgrade repository Ansible collections
+    cmds:
+      - task: ansible
+      - |
+        # ================================================================
+        # Task: apps:ansible:collections
+        # Purpose:
+        #   Install the external Ansible collections required by this
+        #   repository from ansible/requirements.yml.
+        # ================================================================
+        set -euo pipefail
+
+        ansible_galaxy_cmd=''
+
+        if command -v ansible-galaxy >/dev/null 2>&1; then
+          ansible_galaxy_cmd="$(command -v ansible-galaxy)"
+        elif [ -x "${HOME}/.local/bin/ansible-galaxy" ]; then
+          ansible_galaxy_cmd="${HOME}/.local/bin/ansible-galaxy"
+        elif [ -x "${HOME}/.local/share/pipx/venvs/ansible/bin/ansible-galaxy" ]; then
+          ansible_galaxy_cmd="${HOME}/.local/share/pipx/venvs/ansible/bin/ansible-galaxy"
+        else
+          echo 'ansible-galaxy was not found. Run task apps:ansible first.' >&2
+          exit 1
+        fi
+
+        "${ansible_galaxy_cmd}" collection install -r ansible/requirements.yml --force
+
+  hashicorp-repo:
+    desc: Configure the HashiCorp apt repository for Terraform and Packer
+    cmds:
+      - task: apt:update
+      - task: apt:install
+        vars:
+          PKGS: 'ca-certificates curl gnupg lsb-release'
+      - '{{.SUDO}} install -m 0755 -d /etc/apt/keyrings'
+      - |
+        set -euo pipefail
+        if [ ! -f '{{.HASHICORP_KEYRING}}' ]; then
+          curl -fsSL --proto '=https' --tlsv1.2 https://apt.releases.hashicorp.com/gpg \
+            | {{.SUDO}} gpg --dearmor -o '{{.HASHICORP_KEYRING}}'
+        fi
+        {{.SUDO}} chmod a+r '{{.HASHICORP_KEYRING}}'
+      - |
+        set -euo pipefail
+        codename="$({{.SUDO}} lsb_release -cs)"
+        repo_line="deb [signed-by={{.HASHICORP_KEYRING}}] https://apt.releases.hashicorp.com ${codename} main"
+        current_line=""
+        if [ -f '{{.HASHICORP_LIST}}' ]; then
+          current_line="$(cat '{{.HASHICORP_LIST}}' 2>/dev/null || true)"
+        fi
+        if [ "${current_line}" != "${repo_line}" ]; then
+          printf '%s\n' "${repo_line}" | {{.SUDO}} tee '{{.HASHICORP_LIST}}' >/dev/null
+        fi
+      - task: apt:update
+    status:
+      - test -f '{{.HASHICORP_LIST}}'
+
+  terraform:
+    desc: Install Terraform from the HashiCorp apt repository
+    cmds:
+      - task: hashicorp-repo
+      - task: apt:install
+        vars:
+          PKGS: 'terraform'
+      - terraform version
+    status:
+      - command -v terraform >/dev/null 2>&1
+
+  packer:
+    desc: Install Packer from the HashiCorp apt repository
+    cmds:
+      - task: hashicorp-repo
+      - task: apt:install
+        vars:
+          PKGS: 'packer'
+      - packer version
+    status:
+      - command -v packer >/dev/null 2>&1
+
+  openssl:
+    desc: Install openssl if not installed
+    cmds:
+      - task: apt:install
+        vars:
+          PKGS: 'openssl'
+    status:
+      - command -v openssl >/dev/null 2>&1
+
+  arp-scan:
+    desc: Install arp-scan if not installed
+    cmds:
+      - task: apt:update
+      - task: apt:install
+        vars:
+          PKGS: 'arp-scan'
+    status:
+      - command -v arp-scan >/dev/null 2>&1
+
+  status:
+    desc: Print a summary report of installed application status
+    cmds:
+      - |
+        # ================================================================
+        # Task: apps:status
+        # Purpose:
+        #   Print a concise application status report for the homelab host.
+        #
+        # Notes:
+        #   - Reports whether each application is installed and reachable.
+        #   - Prints version details where practical.
+        #   - Does not fail the task if one application is missing.
+        # ================================================================
+        set -u
+
+        report_cmd() {
+          app_name="$1"
+          app_cmd="$2"
+          version_cmd="${3:-}"
+
+          if command -v "${app_cmd}" >/dev/null 2>&1; then
+            printf '[OK] %-20s installed\n' "${app_name}"
+            if [ -n "${version_cmd}" ]; then
+              sh -c "${version_cmd}" 2>/dev/null | head -n 1 | sed 's/^/      version: /' || true
+            fi
+          else
+            printf '[MISSING] %-15s not installed\n' "${app_name}"
+          fi
+        }
+
+        report_file() {
+          item_name="$1"
+          item_path="$2"
+
+          if [ -e "${item_path}" ]; then
+            printf '[OK] %-20s present\n' "${item_name}"
+          else
+            printf '[MISSING] %-15s not present\n' "${item_name}"
+          fi
+        }
+
+        echo '============================================================'
+        echo 'Homelab Applications Status Report'
+        echo "Host: $(hostname)"
+        echo "Date: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo '============================================================'
+
+        report_cmd 'code-server' 'code-server' 'code-server --version'
+        report_cmd 'python3' 'python3' 'python3 --version'
+        report_cmd 'pipx' 'pipx' 'pipx --version'
+        report_cmd 'ansible' 'ansible' 'ansible --version'
+        report_cmd 'ansible-galaxy' 'ansible-galaxy' 'ansible-galaxy --version'
+        report_cmd 'terraform' 'terraform' 'terraform version'
+        report_cmd 'packer' 'packer' 'packer version'
+        report_cmd 'openssl' 'openssl' 'openssl version'
+        report_cmd 'arp-scan' 'arp-scan' 'arp-scan version'
+
+        echo
+        echo 'Supporting configuration'
+        echo '------------------------------------------------------------'
+        report_file 'HashiCorp keyring' '{{.HASHICORP_KEYRING}}'
+        report_file 'HashiCorp repo list' '{{.HASHICORP_LIST}}'
+
+        echo
+        echo 'Summary complete.'

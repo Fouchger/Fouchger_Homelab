@@ -39,6 +39,7 @@ includes:
   secrets: ./taskfile/secrets.Taskfile.yml
   git_gh: ./taskfile/git_gh.Taskfile.yml
   ssh: ./taskfile/ssh.Taskfile.yml
+  apps: ./taskfile/apps.Taskfile.yml
 
 tasks:
   help:
@@ -108,6 +109,25 @@ tasks:
           Destructive:
             task ssh:delete-identity                  Remove the managed local SSH identity
 
+        Applications:
+          Setup:
+            task apps:bootstrap                        Install the core host applications
+            task apps:tasklist                         Show available application install tasks
+
+          Individual installs:
+            task apps:code-server                      Install code-server
+            task apps:python3                          Install Python 3
+            task apps:pipx                             Install pipx
+            task apps:ansible                          Install Ansible
+            task apps:ansible:collections              Install Ansible collections
+            task apps:terraform                        Install Terraform
+            task apps:packer                           Install Packer
+            task apps:openssl                          Install OpenSSL
+            task apps:arp-scan                         Install arp-scan
+
+          Reporting:
+            task apps:status                           Show installed application status
+
         ----- End -----
 
         EOF
@@ -123,3 +143,4 @@ tasks:
       - task: secrets:bootstrap
       - task: git_gh:bootstrap
       - task: git_gh:bootstrap
+      - task: apps:bootstrap
