@@ -40,6 +40,7 @@ includes:
   git_gh: ./taskfile/git_gh.Taskfile.yml
   ssh: ./taskfile/ssh.Taskfile.yml
   apps: ./taskfile/apps.Taskfile.yml
+  proxmox: ./taskfile/proxmox.Taskfile.yml
 
 tasks:
   help:
@@ -89,7 +90,7 @@ tasks:
             task git_gh:auth:git                      Configure git to use gh credentials
             task git_gh:report                        Show Git and GitHub status summary
 
-        SSH and Proxmox:
+        SSH and Proxmox access:
           Setup:
             task ssh:bootstrap                        Full first-time SSH and Proxmox access bootstrap
             task ssh:help                             Show the SSH task menu
@@ -108,6 +109,16 @@ tasks:
 
           Destructive:
             task ssh:delete-identity                  Remove the managed local SSH identity
+
+        Proxmox automation:
+          Setup:
+            task proxmox:bootstrap                    Full Proxmox automation bootstrap
+            task proxmox:help                         Show the Proxmox automation task menu
+            task proxmox:report                       Show the Proxmox automation status summary
+
+          Identity and API:
+            task proxmox:api:ensure                   Reconcile Proxmox automation role, user, ACL, and token
+            task proxmox:node:discover                Discover and persist Proxmox node metadata
 
         Applications:
           Setup:
@@ -144,3 +155,4 @@ tasks:
       - task: git_gh:bootstrap
       - task: git_gh:bootstrap
       - task: apps:bootstrap
+      - task: proxmox:bootstrap
