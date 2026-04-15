@@ -84,9 +84,13 @@ apt-get install -y curl &>/dev/null
 apt-get install -y git &>/dev/null
 msg_ok "Installed Dependencies"
 
-VERSION=$(curl -fsSL https://api.github.com/repos/coder/code-server/releases/latest |
-  grep "tag_name" |
-  awk '{print substr($2, 3, length($2)-4) }')
+# VERSION=$(curl -fsSL https://api.github.com/repos/coder/code-server/releases/latest |
+#   grep "tag_name" |
+#   awk '{print substr($2, 3, length($2)-4) }')
+
+# echo "$VERSION"
+VERSION=4.115.0
+
 
 msg_info "Installing Code-Server v${VERSION}"
 config_path="${HOME}/.config/code-server/config.yaml"

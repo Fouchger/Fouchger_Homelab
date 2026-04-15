@@ -41,6 +41,8 @@ includes:
   ssh: ./taskfile/ssh.Taskfile.yml
   apps: ./taskfile/apps.Taskfile.yml
   proxmox: ./taskfile/proxmox.Taskfile.yml
+  proxmox_vm.Taskfile.yml
+  proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile.uml
 
 tasks:
   help:
@@ -120,24 +122,39 @@ tasks:
             task proxmox:api:ensure                   Reconcile Proxmox automation role, user, ACL, and token
             task proxmox:node:discover                Discover and persist Proxmox node metadata
 
+        Proxmox VM workflows:
+          Setup:
+            task proxmox_vm:help                      Show the Proxmox VM workflow task menu
+            task proxmox_vm:inventory:report          Show the current VM inventory file path
+
+          Workflow building blocks:
+            task proxmox_vm:password:ensure           Ensure a named VM bootstrap password exists
+            task proxmox_vm:inventory:update          Update the local Ansible inventory for a VM
+            task proxmox_vm:workflow:run              Upload and run a VM workflow on Proxmox
+            task proxmox_vm:create:standard           Standard template for a server-specific VM task
+
+          VM Creation:
+            task proxmox_scripts:mikrotik-routeros    Create or reconcile the MikroTik RouterOS CHR VM
+            task proxmox_scripts:opnsense             Create or reconcile the OPNsense VM
+
         Applications:
           Setup:
-            task apps:bootstrap                        Install the core host applications
-            task apps:tasklist                         Show available application install tasks
+            task apps:bootstrap                       Install the core host applications
+            task apps:tasklist                        Show available application install tasks
 
           Individual installs:
-            task apps:code-server                      Install code-server
-            task apps:python3                          Install Python 3
-            task apps:pipx                             Install pipx
-            task apps:ansible                          Install Ansible
-            task apps:ansible:collections              Install Ansible collections
-            task apps:terraform                        Install Terraform
-            task apps:packer                           Install Packer
-            task apps:openssl                          Install OpenSSL
-            task apps:arp-scan                         Install arp-scan
+            task apps:code-server                     Install code-server
+            task apps:python3                         Install Python 3
+            task apps:pipx                            Install pipx
+            task apps:ansible                         Install Ansible
+            task apps:ansible:collections             Install Ansible collections
+            task apps:terraform                       Install Terraform
+            task apps:packer                          Install Packer
+            task apps:openssl                         Install OpenSSL
+            task apps:arp-scan                        Install arp-scan
 
           Reporting:
-            task apps:status                           Show installed application status
+            task apps:status                          Show installed application status
 
         ----- End -----
 

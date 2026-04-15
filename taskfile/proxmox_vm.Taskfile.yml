@@ -1,0 +1,752 @@
+# ================================================================
+# File: taskfile/proxmox_vm.Taskfile.yml
+# Purpose:
+#   Manage repository-aligned Proxmox VM workflows that upload a
+#   VM helper to the Proxmox host, run a shared remote workflow,
+#   persist per-VM bootstrap passwords in the encrypted passwords
+#   store, and reconcile discovered metadata into the local
+#   Ansible inventory.
+#
+# Notes:
+#   - This file complements, and does not replace, the existing
+#     proxmox Taskfile used for API bootstrap and node discovery.
+#   - It uses the same repository helper functions and env paths
+#     already established by the root Taskfile and secrets domain.
+#   - VM-specific remote scripts should live under
+#     scripts/proxmox_helper_scripts.
+#   - Shared remote VM workflow scripts should live under
+#     scripts/proxmox_workflows.
+# ================================================================
+version: '3'
+
+silent: true
+
+vars:
+  TASKFILE: '{{.TASKFILE | default "taskfile/proxmox_vm.Taskfile.yml"}}'
+
+  SSH_KEY_DIR: '{{.HOME}}/.ssh'
+  KEY_NAME: 'id_ed25519'
+  SSH_KEY_FILE: '{{.SSH_KEY_DIR}}/{{.KEY_NAME}}'
+  SSH_KNOWN_HOSTS_FILE: '{{.SSH_KEY_DIR}}/known_hosts'
+
+  INVENTORY_DIR: '{{.ROOT_DIR}}/state/ansible'
+  INVENTORY_FILE: '{{.INVENTORY_DIR}}/inventory.yml'
+
+  DEFAULT_PROXMOX_SSH_PORT: '{{.PROXMOX_SSH_PORT | default "22"}}'
+  DEFAULT_PROXMOX_SSH_USER: '{{.PROXMOX_SSH_USER | default "root"}}'
+  DEFAULT_SSH_CONNECT_TIMEOUT: '{{.SSH_CONNECT_TIMEOUT | default "5"}}'
+
+  VM_HELPERS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_helper_scripts'
+  VM_WORKFLOWS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_workflows'
+  DEFAULT_WORKFLOW_SCRIPT: '{{.VM_WORKFLOWS_DIR}}/generic-vm-discovery.sh'
+
+  DEFAULT_REMOTE_TMP_PREFIX: 'proxmox-vm'
+  DEFAULT_REMOTE_RESULT_FILE: 'vm-discovery.env'
+  DEFAULT_REMOTE_WORKFLOW_NAME: 'generic-vm-discovery.sh'
+  DEFAULT_VM_PRIMARY_NIC: 'net0'
+
+tasks:
+  tasklist:
+    desc: Show available Proxmox VM tasks
+    cmds:
+      - task --taskfile {{.TASKFILE}} --list
+
+  help:
+    desc: Show the Proxmox VM workflow task menu
+    cmds:
+      - |
+        cat <<'EOF'
+        Proxmox VM workflow tasks:
+          task proxmox_vm:help
+          task proxmox_vm:tasklist
+          task proxmox_vm:inventory:report
+
+        Workflow building blocks:
+          task proxmox_vm:password:ensure SECRET_NAME=<name>
+          task proxmox_vm:inventory:update INVENTORY_GROUP=<group> VM_HOSTNAME=<host> VM_VMID=<vmid> VM_MAC=<mac>
+          task proxmox_vm:workflow:run HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> VM_DEFAULT_ID=<id> VM_DEFAULT_HOSTNAME=<name>
+          task proxmox_vm:create:standard SERVER_NAME=<name> SECRET_NAME=<secret> HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> VM_DEFAULT_ID=<id> VM_DEFAULT_HOSTNAME=<name>
+
+        Expected repository paths:
+          VM helper scripts:   scripts/proxmox_helper_scripts/
+          Shared workflows:    scripts/proxmox_workflows/
+          Local inventory:     state/ansible/inventory.yml
+        EOF
+
+  inventory:report:
+    desc: Show the current Proxmox VM inventory location
+    cmds:
+      - |
+        # ================================================================
+        # Task: inventory:report
+        # Purpose:
+        #   Show the repository-local inventory path used by the
+        #   Proxmox VM workflow tasks.
+        # ================================================================
+        set -eu
+
+        echo '--- Proxmox VM inventory ---'
+        echo 'Inventory file: {{.INVENTORY_FILE}}'
+
+  password:ensure:
+    desc: Ensure a named VM bootstrap password exists in the encrypted passwords env
+    requires:
+      vars:
+        - SECRET_NAME
+    deps:
+      - :secrets:prepare
+    cmds:
+      - |
+        # ================================================================
+        # Task: password:ensure
+        # Purpose:
+        #   Ensure a VM bootstrap password is present in the encrypted
+        #   passwords env file used by this repository.
+        #
+        # Required vars:
+        #   SECRET_NAME
+        #
+        # Optional vars:
+        #   SECRET_PROMPT
+        # ================================================================
+        set -eu
+        . '{{.TASK_HELPERS_FILE}}'
+
+        passwords_enc_file='{{.PASSWORDS_ENC_ENV_FILE}}'
+        passwords_enc_file_rel='{{.PASSWORDS_ENC_ENV_FILE_REL}}'
+        age_keys_file='{{.AGE_KEYS_FILE}}'
+        secret_name='{{.SECRET_NAME}}'
+        secret_prompt='{{default "" .SECRET_PROMPT}}'
+
+        require_command sops
+
+        [ -f "$age_keys_file" ] || {
+          echo "Age identities not found: $age_keys_file" >&2
+          echo 'Run: task secrets:prepare first.' >&2
+          exit 1
+        }
+
+        if [ ! -f "$passwords_enc_file" ]; then
+          ensure_parent_dir "$passwords_enc_file"
+          : > "$passwords_enc_file"
+          chmod 600 "$passwords_enc_file"
+        fi
+
+        decrypt_tmp_file="$(mktemp)"
+        trap 'rm -f "$decrypt_tmp_file"' EXIT
+
+        if [ -s "$passwords_enc_file" ]; then
+          if ! SOPS_AGE_KEY_FILE="$age_keys_file" sops --decrypt "$passwords_enc_file" > "$decrypt_tmp_file" 2>/dev/null; then
+            echo "Unable to decrypt encrypted passwords file: $passwords_enc_file" >&2
+            exit 1
+          fi
+        else
+          : > "$decrypt_tmp_file"
+        fi
+        chmod 600 "$decrypt_tmp_file"
+
+        existing_value="$(get_env_value "$decrypt_tmp_file" "$secret_name" || true)"
+        if [ -n "$existing_value" ]; then
+          echo "$secret_name is already present in $passwords_enc_file"
+          exit 0
+        fi
+
+        if [ -z "$secret_prompt" ]; then
+          secret_prompt="Enter bootstrap password for ${secret_name}: "
+        fi
+
+        if [ ! -t 0 ]; then
+          echo "A value is required for ${secret_name} and no interactive terminal is available." >&2
+          exit 1
+        fi
+
+        printf '%s' "$secret_prompt" > /dev/tty
+        stty -echo < /dev/tty
+        IFS= read -r secret_value < /dev/tty || true
+        stty echo < /dev/tty
+        printf '\n' > /dev/tty
+
+        printf '%s' 'Confirm bootstrap password: ' > /dev/tty
+        stty -echo < /dev/tty
+        IFS= read -r secret_confirm < /dev/tty || true
+        stty echo < /dev/tty
+        printf '\n' > /dev/tty
+
+        [ -n "$secret_value" ] || {
+          echo "${secret_name} cannot be empty." >&2
+          exit 1
+        }
+
+        [ "$secret_value" = "$secret_confirm" ] || {
+          echo 'Passwords did not match.' >&2
+          exit 1
+        }
+
+        encrypted_dotenv_upsert "$secret_name" "$secret_value" "$passwords_enc_file" "$age_keys_file" "$passwords_enc_file_rel"
+        echo "Stored $secret_name in $passwords_enc_file"
+
+  inventory:update:
+    desc: Update the local Ansible inventory with discovered VM metadata
+    requires:
+      vars:
+        - INVENTORY_GROUP
+        - VM_HOSTNAME
+        - VM_VMID
+        - VM_MAC
+    cmds:
+      - |
+        # ================================================================
+        # Task: inventory:update
+        # Purpose:
+        #   Update the repository-local Ansible inventory with discovered
+        #   VM metadata under all.children.<group>.hosts.<hostname>.
+        # ================================================================
+        set -eu
+
+        inventory_file='{{.INVENTORY_FILE}}'
+        inventory_group='{{.INVENTORY_GROUP}}'
+        vm_hostname='{{.VM_HOSTNAME}}'
+        vm_ip='{{default "" .VM_IP}}'
+        vm_vmid='{{.VM_VMID}}'
+        vm_mac='{{.VM_MAC}}'
+        vm_bridge='{{default "" .VM_BRIDGE}}'
+        vm_primary_nic='{{default "" .VM_PRIMARY_NIC}}'
+
+        mkdir -p "$(dirname "$inventory_file")"
+
+        python3 - "$inventory_file" "$inventory_group" "$vm_hostname" "$vm_ip" "$vm_vmid" "$vm_mac" "$vm_bridge" "$vm_primary_nic" <<'PY'
+        # ================================================================
+        # File: inventory updater
+        # Purpose:
+        #   Maintain a repository-local Ansible inventory structure.
+        # ================================================================
+        import sys
+        from pathlib import Path
+
+        try:
+            import yaml
+        except ImportError as exc:
+            raise SystemExit(
+                'PyYAML is required to update the inventory. Install it with: python3 -m pip install pyyaml'
+            ) from exc
+
+        inventory_path = Path(sys.argv[1])
+        inventory_group = sys.argv[2]
+        hostname = sys.argv[3]
+        ip_address = sys.argv[4]
+        vmid = sys.argv[5]
+        mac_address = sys.argv[6]
+        bridge = sys.argv[7]
+        primary_nic = sys.argv[8]
+
+        if inventory_path.exists():
+            with inventory_path.open('r', encoding='utf-8') as handle:
+                inventory = yaml.safe_load(handle) or {}
+        else:
+            inventory = {}
+
+        if not isinstance(inventory, dict):
+            raise SystemExit(f'Inventory file is not a YAML mapping: {inventory_path}')
+
+        all_group = inventory.setdefault('all', {})
+        children = all_group.setdefault('children', {})
+        target_group = children.setdefault(inventory_group, {})
+        hosts = target_group.setdefault('hosts', {})
+        host_entry = hosts.setdefault(hostname, {})
+
+        if ip_address:
+            host_entry['ansible_host'] = ip_address
+        else:
+            host_entry.pop('ansible_host', None)
+
+        host_entry['vmid'] = int(vmid)
+        host_entry['mac_address'] = mac_address
+
+        if bridge:
+            host_entry['proxmox_bridge'] = bridge
+        else:
+            host_entry.pop('proxmox_bridge', None)
+
+        if primary_nic:
+            host_entry['proxmox_primary_nic'] = primary_nic
+        else:
+            host_entry.pop('proxmox_primary_nic', None)
+
+        with inventory_path.open('w', encoding='utf-8') as handle:
+            yaml.safe_dump(inventory, handle, sort_keys=False, default_flow_style=False)
+        PY
+
+        echo "Updated $inventory_file with $vm_hostname under group $inventory_group"
+
+  workflow:run:
+    desc: Upload and run a VM helper plus shared workflow on Proxmox
+    requires:
+      vars:
+        - HELPER_SCRIPT
+        - INVENTORY_GROUP
+        - VM_DEFAULT_ID
+        - VM_DEFAULT_HOSTNAME
+    deps:
+      - :ssh:generate
+      - :ssh:known-hosts:trust:proxmox
+      - :proxmox:node:discover
+    cmds:
+      - |
+          # ================================================================
+          # Task: workflow:run
+          # Purpose:
+          #   Upload a VM helper script and shared remote VM workflow to
+          #   the Proxmox host, capture the returned result payload, and
+          #   reconcile discovered metadata into the local inventory.
+          #
+          # Notes:
+          #   - IP discovery is delegated to proxmox_vm:inventory:ips:refresh
+          #     so create-time and later refresh-time use the same logic.
+          # ================================================================
+          set -eu
+          . '{{.TASK_HELPERS_FILE}}'
+
+          require_command ssh
+          require_command scp
+          require_command python3
+
+          config_env_file='{{.CONFIG_ENV_FILE}}'
+          ssh_key_file='{{.SSH_KEY_FILE}}'
+          known_hosts_file='{{.SSH_KNOWN_HOSTS_FILE}}'
+
+          helper_script='{{.HELPER_SCRIPT}}'
+          workflow_script='{{default .DEFAULT_WORKFLOW_SCRIPT .WORKFLOW_SCRIPT}}'
+          inventory_group='{{.INVENTORY_GROUP}}'
+          vm_default_id='{{.VM_DEFAULT_ID}}'
+          vm_default_hostname='{{.VM_DEFAULT_HOSTNAME}}'
+          vm_primary_nic='{{default .DEFAULT_VM_PRIMARY_NIC .VM_PRIMARY_NIC}}'
+          remote_tmp_prefix='{{default .DEFAULT_REMOTE_TMP_PREFIX .REMOTE_TMP_PREFIX}}'
+          helper_remote_name='{{default "" .HELPER_REMOTE_NAME}}'
+          workflow_remote_name='{{default .DEFAULT_REMOTE_WORKFLOW_NAME .WORKFLOW_REMOTE_NAME}}'
+          remote_result_file='{{default .DEFAULT_REMOTE_RESULT_FILE .REMOTE_RESULT_FILE}}'
+          remote_term="${TERM:-xterm-256color}"
+
+          [ -f "$config_env_file" ] || {
+            echo "Required config env file not found: $config_env_file" >&2
+            echo 'Run: task ssh:bootstrap first.' >&2
+            exit 1
+          }
+
+          [ -f "$ssh_key_file" ] || {
+            echo "Required SSH private key not found: $ssh_key_file" >&2
+            echo 'Run: task ssh:generate first.' >&2
+            exit 1
+          }
+
+          [ -f "$helper_script" ] || {
+            echo "Required VM helper script not found: $helper_script" >&2
+            exit 1
+          }
+
+          [ -f "$workflow_script" ] || {
+            echo "Required workflow script not found: $workflow_script" >&2
+            exit 1
+          }
+
+          proxmox_ssh_host="$(get_env_value "$config_env_file" PROXMOX_SSH_HOST || true)"
+          proxmox_ssh_port="$(get_env_value "$config_env_file" PROXMOX_SSH_PORT || true)"
+          proxmox_ssh_user="$(get_env_value "$config_env_file" PROXMOX_SSH_USER || true)"
+          ssh_connect_timeout="$(get_env_value "$config_env_file" SSH_CONNECT_TIMEOUT || true)"
+          proxmox_host_ip="$(get_env_value "$config_env_file" PROXMOX_HOST_IP || true)"
+
+          if [ -z "$proxmox_ssh_host" ]; then
+            proxmox_ssh_host="$proxmox_host_ip"
+          fi
+          if [ -z "$proxmox_ssh_port" ]; then
+            proxmox_ssh_port='{{.DEFAULT_PROXMOX_SSH_PORT}}'
+          fi
+          if [ -z "$proxmox_ssh_user" ]; then
+            proxmox_ssh_user='{{.DEFAULT_PROXMOX_SSH_USER}}'
+          fi
+          if [ -z "$ssh_connect_timeout" ]; then
+            ssh_connect_timeout='{{.DEFAULT_SSH_CONNECT_TIMEOUT}}'
+          fi
+          if [ -z "$proxmox_ssh_host" ]; then
+            echo 'PROXMOX_SSH_HOST or PROXMOX_HOST_IP is required in state/config/.env.' >&2
+            exit 1
+          fi
+
+          if [ -z "$helper_remote_name" ]; then
+            helper_remote_name="$(basename "$helper_script")"
+          fi
+
+          session_log="$(mktemp)"
+          local_helper_stage=''
+          local_workflow_stage=''
+          remote_tmp_dir=''
+          remote_exit_code=0
+
+          cleanup() {
+            rm -f "$session_log" >/dev/null 2>&1 || true
+
+            if [ -n "$local_helper_stage" ]; then
+              rm -f "$local_helper_stage" >/dev/null 2>&1 || true
+            fi
+
+            if [ -n "$local_workflow_stage" ]; then
+              rm -f "$local_workflow_stage" >/dev/null 2>&1 || true
+            fi
+
+            if [ -n "$remote_tmp_dir" ]; then
+              ssh \
+                -i "$ssh_key_file" \
+                -o BatchMode=yes \
+                -o StrictHostKeyChecking=yes \
+                -o UserKnownHostsFile="$known_hosts_file" \
+                -o ConnectTimeout="$ssh_connect_timeout" \
+                -p "$proxmox_ssh_port" \
+                "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+                "rm -rf '$remote_tmp_dir'" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          install -d -m 700 "$(dirname "$known_hosts_file")"
+          touch "$known_hosts_file"
+          chmod 600 "$known_hosts_file"
+
+          remote_tmp_dir="$(ssh \
+            -i "$ssh_key_file" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts_file" \
+            -o ConnectTimeout="$ssh_connect_timeout" \
+            -p "$proxmox_ssh_port" \
+            "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+            "mktemp -d '/tmp/${remote_tmp_prefix}.XXXXXX'")"
+
+          [ -n "$remote_tmp_dir" ] || {
+            echo 'Failed to create a remote temporary directory on Proxmox.' >&2
+            exit 1
+          }
+
+          local_helper_stage="$(mktemp)"
+          local_workflow_stage="$(mktemp)"
+
+          cp "$helper_script" "$local_helper_stage"
+          cp "$workflow_script" "$local_workflow_stage"
+          chmod 700 "$local_helper_stage" "$local_workflow_stage"
+
+          scp \
+            -i "$ssh_key_file" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts_file" \
+            -o ConnectTimeout="$ssh_connect_timeout" \
+            -P "$proxmox_ssh_port" \
+            "$local_helper_stage" \
+            "${proxmox_ssh_user}@${proxmox_ssh_host}:${remote_tmp_dir}/${helper_remote_name}" >/dev/null
+
+          scp \
+            -i "$ssh_key_file" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts_file" \
+            -o ConnectTimeout="$ssh_connect_timeout" \
+            -P "$proxmox_ssh_port" \
+            "$local_workflow_stage" \
+            "${proxmox_ssh_user}@${proxmox_ssh_host}:${remote_tmp_dir}/${workflow_remote_name}" >/dev/null
+
+          ssh \
+            -i "$ssh_key_file" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts_file" \
+            -o ConnectTimeout="$ssh_connect_timeout" \
+            -p "$proxmox_ssh_port" \
+            "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+            "chmod 700 '${remote_tmp_dir}/${helper_remote_name}' '${remote_tmp_dir}/${workflow_remote_name}'" >/dev/null
+
+          ssh \
+            -tt \
+            -i "$ssh_key_file" \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts_file" \
+            -o ConnectTimeout="$ssh_connect_timeout" \
+            -p "$proxmox_ssh_port" \
+            "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+            "cd '${remote_tmp_dir}' && VM_DEFAULT_ID='${vm_default_id}' VM_DEFAULT_HOSTNAME='${vm_default_hostname}' VM_PRIMARY_NIC='${vm_primary_nic}' REMOTE_TMP_DIR='${remote_tmp_dir}' REMOTE_TERM='${remote_term}' HELPER_SCRIPT_NAME='${helper_remote_name}' RESULT_FILE='${remote_result_file}' bash '${remote_tmp_dir}/${workflow_remote_name}'" \
+            | tee "$session_log" || remote_exit_code=$?
+
+          result_payload="$(ssh \
+            -i "$ssh_key_file" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts_file" \
+            -o ConnectTimeout="$ssh_connect_timeout" \
+            -p "$proxmox_ssh_port" \
+            "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+            "if [ -f '${remote_tmp_dir}/${remote_result_file}' ]; then cat '${remote_tmp_dir}/${remote_result_file}'; fi" || true)"
+
+          vm_created="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_CREATED=//p' | tail -n 1 | tr -d '\r')"
+          vm_vmid="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_VMID=//p' | tail -n 1 | tr -d '\r')"
+          vm_hostname="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_HOSTNAME=//p' | tail -n 1 | tr -d '\r')"
+          vm_mac="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_MAC=//p' | tail -n 1 | tr -d '\r')"
+          vm_bridge="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_BRIDGE=//p' | tail -n 1 | tr -d '\r')"
+          vm_primary_nic_result="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_PRIMARY_NIC=//p' | tail -n 1 | tr -d '\r')"
+
+          if [ -z "$vm_vmid" ] || [ -z "$vm_hostname" ] || [ -z "$vm_mac" ]; then
+            if [ "$remote_exit_code" -ne 0 ]; then
+              echo "Remote VM workflow failed. Review the console output above. Exit code: $remote_exit_code" >&2
+            else
+              echo 'Remote workflow did not return a complete result payload.' >&2
+            fi
+            exit 1
+          fi
+
+          if [ "$vm_created" = '1' ]; then
+            echo "Created VM $vm_vmid ($vm_hostname) on Proxmox"
+          else
+            echo "Reconciled existing VM $vm_vmid ($vm_hostname) on Proxmox"
+          fi
+
+          task proxmox_vm:inventory:update \
+            INVENTORY_GROUP="$inventory_group" \
+            VM_HOSTNAME="$vm_hostname" \
+            VM_IP="" \
+            VM_VMID="$vm_vmid" \
+            VM_MAC="$vm_mac" \
+            VM_BRIDGE="$vm_bridge" \
+            VM_PRIMARY_NIC="$vm_primary_nic_result"
+
+          task proxmox_vm:inventory:ips:refresh
+
+  create:standard:
+    desc: Standard template for a server-specific Proxmox VM create task
+    requires:
+      vars:
+        - SERVER_NAME
+        - SECRET_NAME
+        - HELPER_SCRIPT
+        - INVENTORY_GROUP
+        - VM_DEFAULT_ID
+        - VM_DEFAULT_HOSTNAME
+    cmds:
+      - task: :proxmox_vm:password:ensure
+        vars:
+          SECRET_NAME: '{{.SECRET_NAME}}'
+          SECRET_PROMPT: '{{default "" .SECRET_PROMPT}}'
+      - task: :proxmox_vm:workflow:run
+        vars:
+          HELPER_SCRIPT: '{{.HELPER_SCRIPT}}'
+          WORKFLOW_SCRIPT: '{{default .DEFAULT_WORKFLOW_SCRIPT .WORKFLOW_SCRIPT}}'
+          INVENTORY_GROUP: '{{.INVENTORY_GROUP}}'
+          VM_DEFAULT_ID: '{{.VM_DEFAULT_ID}}'
+          VM_DEFAULT_HOSTNAME: '{{.VM_DEFAULT_HOSTNAME}}'
+          VM_PRIMARY_NIC: '{{default .DEFAULT_VM_PRIMARY_NIC .VM_PRIMARY_NIC}}'
+          REMOTE_TMP_PREFIX: '{{default .SERVER_NAME .REMOTE_TMP_PREFIX}}'
+          HELPER_REMOTE_NAME: '{{default "" .HELPER_REMOTE_NAME}}'
+          WORKFLOW_REMOTE_NAME: '{{default .DEFAULT_REMOTE_WORKFLOW_NAME .WORKFLOW_REMOTE_NAME}}'
+          REMOTE_RESULT_FILE: '{{default .DEFAULT_REMOTE_RESULT_FILE .REMOTE_RESULT_FILE}}'
+
+  inventory:ips:refresh:
+    desc: Refresh ansible_host values for all inventory hosts using Proxmox and local discovery
+    deps:
+      - :ssh:generate
+      - :ssh:known-hosts:trust:proxmox
+      - :proxmox:node:discover
+    cmds:
+      - |
+          # ================================================================
+          # Task: inventory:ips:refresh
+          # Purpose:
+          #   Refresh ansible_host values in state/ansible/inventory.yml
+          #   for all inventory entries that contain vmid metadata.
+          #
+          # Notes:
+          #   - Works for both QEMU VMs and LXCs.
+          #   - Discovery order:
+          #       1. QEMU guest agent on Proxmox
+          #       2. LXC IPv4 from pct exec
+          #       3. Proxmox neighbour table by MAC
+          #       4. Local arp-scan by MAC
+          #   - Inventory is only updated when an IPv4 address is found.
+          # ================================================================
+          set -eu
+          . '{{.TASK_HELPERS_FILE}}'
+
+          require_command python3
+          require_command ssh
+
+          inventory_file='{{.INVENTORY_FILE}}'
+          config_env_file='{{.CONFIG_ENV_FILE}}'
+          ssh_key_file='{{.SSH_KEY_FILE}}'
+          known_hosts_file='{{.SSH_KNOWN_HOSTS_FILE}}'
+
+          proxmox_ssh_host="$(get_env_value "$config_env_file" PROXMOX_SSH_HOST || true)"
+          proxmox_ssh_port="$(get_env_value "$config_env_file" PROXMOX_SSH_PORT || true)"
+          proxmox_ssh_user="$(get_env_value "$config_env_file" PROXMOX_SSH_USER || true)"
+          proxmox_host_ip="$(get_env_value "$config_env_file" PROXMOX_HOST_IP || true)"
+          ssh_connect_timeout="$(get_env_value "$config_env_file" SSH_CONNECT_TIMEOUT || true)"
+
+          if [ -z "$proxmox_ssh_host" ]; then
+            proxmox_ssh_host="$proxmox_host_ip"
+          fi
+          if [ -z "$proxmox_ssh_port" ]; then
+            proxmox_ssh_port='{{.DEFAULT_PROXMOX_SSH_PORT}}'
+          fi
+          if [ -z "$proxmox_ssh_user" ]; then
+            proxmox_ssh_user='{{.DEFAULT_PROXMOX_SSH_USER}}'
+          fi
+          if [ -z "$ssh_connect_timeout" ]; then
+            ssh_connect_timeout='{{.DEFAULT_SSH_CONNECT_TIMEOUT}}'
+          fi
+
+          [ -f "$inventory_file" ] || {
+            echo "Inventory file not found: $inventory_file" >&2
+            exit 1
+          }
+
+          tmp_hosts_file="$(mktemp)"
+          tmp_results_file="$(mktemp)"
+          trap 'rm -f "$tmp_hosts_file" "$tmp_results_file"' EXIT
+
+          python3 - "$inventory_file" > "$tmp_hosts_file" <<'PY'
+          # ================================================================
+          # File: inventory host extractor
+          # Purpose:
+          #   Emit one line per inventory host as:
+          #   group|hostname|vmid|mac_address
+          # ================================================================
+          import sys
+          from pathlib import Path
+
+          try:
+              import yaml
+          except ImportError as exc:
+              raise SystemExit(
+                  'PyYAML is required. Install it with: python3 -m pip install pyyaml'
+              ) from exc
+
+          inventory_path = Path(sys.argv[1])
+          with inventory_path.open('r', encoding='utf-8') as handle:
+              inventory = yaml.safe_load(handle) or {}
+
+          children = ((inventory.get('all') or {}).get('children') or {})
+          for group_name, group_data in children.items():
+              hosts = (group_data or {}).get('hosts') or {}
+              for hostname, host_data in hosts.items():
+                  if not isinstance(host_data, dict):
+                      continue
+                  vmid = host_data.get('vmid', '')
+                  mac = host_data.get('mac_address', '')
+                  print(f"{group_name}|{hostname}|{vmid}|{mac}")
+          PY
+
+          while IFS='|' read -r inventory_group vm_hostname vm_vmid vm_mac; do
+            [ -n "$vm_hostname" ] || continue
+            [ -n "$vm_vmid" ] || continue
+
+            discovered_ip=''
+
+            discovered_ip="$(ssh \
+              -i "$ssh_key_file" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$known_hosts_file" \
+              -o ConnectTimeout="$ssh_connect_timeout" \
+              -p "$proxmox_ssh_port" \
+              "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+              "qm guest cmd '$vm_vmid' network-get-interfaces 2>/dev/null | jq -r '.[] | .[\"ip-addresses\"][]? | select(.[\"ip-address-type\"] == \"ipv4\") | .[\"ip-address\"]' | grep -v '^127\\.' | head -n 1" \
+              2>/dev/null | tr -d '\r' || true)"
+
+            if [ -z "$discovered_ip" ]; then
+              discovered_ip="$(ssh \
+                -i "$ssh_key_file" \
+                -o BatchMode=yes \
+                -o StrictHostKeyChecking=yes \
+                -o UserKnownHostsFile="$known_hosts_file" \
+                -o ConnectTimeout="$ssh_connect_timeout" \
+                -p "$proxmox_ssh_port" \
+                "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+                "pct exec '$vm_vmid' -- sh -c \"ip -o -4 addr show scope global 2>/dev/null | awk '{print \\\$4}' | cut -d/ -f1 | head -n 1\"" \
+                2>/dev/null | tr -d '\r' || true)"
+            fi
+
+            if [ -z "$discovered_ip" ] && [ -n "$vm_mac" ]; then
+              discovered_ip="$(ssh \
+                -i "$ssh_key_file" \
+                -o BatchMode=yes \
+                -o StrictHostKeyChecking=yes \
+                -o UserKnownHostsFile="$known_hosts_file" \
+                -o ConnectTimeout="$ssh_connect_timeout" \
+                -p "$proxmox_ssh_port" \
+                "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+                "ip neigh 2>/dev/null | awk -v target='$vm_mac' 'toupper(\$5) == toupper(target) && \$1 !~ /^169\\.254\\./ { print \$1; exit }'" \
+                2>/dev/null | tr -d '\r' || true)"
+            fi
+
+            if [ -z "$discovered_ip" ] && [ -n "$vm_mac" ] && command -v arp-scan >/dev/null 2>&1; then
+              discovered_ip="$(arp-scan --localnet 2>/dev/null | awk -v target="$vm_mac" '
+                toupper($2) == toupper(target) {
+                  print $1
+                  exit
+                }
+              ')"
+            fi
+
+            if [ -n "$discovered_ip" ]; then
+              printf '%s|%s|%s\n' "$inventory_group" "$vm_hostname" "$discovered_ip" >> "$tmp_results_file"
+              echo "Discovered IP for $vm_hostname: $discovered_ip"
+            else
+              echo "No IP discovered for $vm_hostname"
+            fi
+          done < "$tmp_hosts_file"
+
+          if [ ! -s "$tmp_results_file" ]; then
+            echo 'No inventory hosts produced a discoverable IP address.'
+            exit 0
+          fi
+
+          python3 - "$inventory_file" "$tmp_results_file" <<'PY'
+          # ================================================================
+          # File: inventory IP updater
+          # Purpose:
+          #   Update ansible_host for inventory hosts from a discovered
+          #   group|hostname|ip result file.
+          # ================================================================
+          import sys
+          from pathlib import Path
+
+          try:
+              import yaml
+          except ImportError as exc:
+              raise SystemExit(
+                  'PyYAML is required. Install it with: python3 -m pip install pyyaml'
+              ) from exc
+
+          inventory_path = Path(sys.argv[1])
+          results_path = Path(sys.argv[2])
+
+          with inventory_path.open('r', encoding='utf-8') as handle:
+              inventory = yaml.safe_load(handle) or {}
+
+          updates = {}
+          with results_path.open('r', encoding='utf-8') as handle:
+              for raw_line in handle:
+                  line = raw_line.strip()
+                  if not line:
+                      continue
+                  group_name, hostname, ip_address = line.split('|', 2)
+                  updates[(group_name, hostname)] = ip_address
+
+          children = ((inventory.get('all') or {}).get('children') or {})
+          for group_name, group_data in children.items():
+              hosts = (group_data or {}).get('hosts') or {}
+              for hostname, host_data in hosts.items():
+                  if not isinstance(host_data, dict):
+                      continue
+                  ip_address = updates.get((group_name, hostname))
+                  if ip_address:
+                      host_data['ansible_host'] = ip_address
+
+          with inventory_path.open('w', encoding='utf-8') as handle:
+              yaml.safe_dump(inventory, handle, sort_keys=False, default_flow_style=False)
+          PY
+
+          echo "Updated $inventory_file with refreshed ansible_host values"
