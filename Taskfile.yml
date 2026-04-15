@@ -41,8 +41,8 @@ includes:
   ssh: ./taskfile/ssh.Taskfile.yml
   apps: ./taskfile/apps.Taskfile.yml
   proxmox: ./taskfile/proxmox.Taskfile.yml
-  proxmox_vm.Taskfile.yml
-  proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile.uml
+  proxmox_vm: ./taskfile/proxmox_vm.Taskfile.yml
+  proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile.yml
 
 tasks:
   help:
@@ -132,6 +132,7 @@ tasks:
             task proxmox_vm:inventory:update          Update the local Ansible inventory for a VM
             task proxmox_vm:workflow:run              Upload and run a VM workflow on Proxmox
             task proxmox_vm:create:standard           Standard template for a server-specific VM task
+            task proxmox_vm:inventory:ips:refresh     Refresh ansible_host values for all inventory hosts using Proxmox and local discovery
 
           VM Creation:
             task proxmox_scripts:mikrotik-routeros    Create or reconcile the MikroTik RouterOS CHR VM
