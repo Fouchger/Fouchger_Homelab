@@ -149,10 +149,10 @@ tasks:
       - task: help
 
   day1:
-    desc: Show the top-level help menu
+    desc: Run the first-day homelab bootstrap flow
     cmds:
       - task: secrets:bootstrap
       - task: git_gh:bootstrap
-      - task: git_gh:bootstrap
+      - task: ssh:bootstrap
       - task: apps:bootstrap
       - task: proxmox:bootstrap

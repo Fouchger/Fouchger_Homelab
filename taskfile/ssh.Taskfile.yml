@@ -57,6 +57,13 @@ tasks:
 
         EOF
 
+  # ################################################################
+# File: taskfile/ssh.Taskfile.yml
+# Updated: 2026/04/15
+# Description:
+#   SSH bootstrap, trust, and reporting tasks for Proxmox access.
+# ################################################################
+
   bootstrap:
     desc: Run the recommended first-time SSH bootstrap flow for Proxmox access
     deps:
@@ -79,10 +86,7 @@ tasks:
         SSH bootstrap complete.
 
         The local SSH key is ready, the Proxmox host key is trusted,
-        and the public key has been added to the Proxmox host.
-
-        Next recommended task:
-          task ssh:report
+        and passwordless SSH access has been ensured for the Proxmox host.
         EOF
 
   files:ensure:
@@ -234,6 +238,7 @@ tasks:
         #     [host]:port.
         #   - Uses Task defer for cleanup instead of shell trap to keep
         #     behaviour portable across /bin/sh implementations.
+        #   - Repeat runs stay quiet when trust already exists.
         # ================================================================
         set -eu
         . '{{.TASK_HELPERS_FILE}}'
@@ -264,7 +269,6 @@ tasks:
         fi
 
         if ssh-keygen -F "$known_hosts_target" -f '{{.SSH_KNOWN_HOSTS_FILE}}' >/dev/null 2>&1; then
-          echo "known_hosts already contains an entry for $known_hosts_target"
           exit 0
         fi
 
@@ -283,26 +287,22 @@ tasks:
         echo "Host:    $proxmox_ssh_host"
         echo "Port:    $proxmox_ssh_port"
         echo "User:    $proxmox_ssh_user"
-        echo "Timeout: ${ssh_connect_timeout}s"
-        echo ''
-        echo 'Fingerprints:'
-        ssh-keygen -lf "$scan_file"
-        echo ''
-        echo 'Scanned known_hosts entries:'
-        cat "$scan_file"
         echo ''
 
-        if [ ! -t 0 ]; then
-          echo 'Explicit operator confirmation is required, but no interactive terminal is available.' >&2
-          exit 1
-        fi
+        ssh-keygen -lf "$scan_file" || true
+        echo ''
 
-        printf 'Type trust to add this host key to known_hosts: ' >&2
-        IFS= read -r operator_confirmation
-
-        if [ "$operator_confirmation" != 'trust' ]; then
-          echo 'Host key was not trusted. No changes were made.' >&2
-          exit 1
+        if [ "{{.NONINTERACTIVE}}" != "1" ]; then
+          printf 'Trust this host key and add it to known_hosts? [y/N]: ' >&2
+          IFS= read -r confirm
+          case "$confirm" in
+            y|Y|yes|YES)
+              ;;
+            *)
+              echo 'Host key trust was not confirmed.' >&2
+              exit 1
+              ;;
+          esac
         fi
 
         cat "$scan_file" >> '{{.SSH_KNOWN_HOSTS_FILE}}'
@@ -331,6 +331,8 @@ tasks:
         #     state/config/.env for future runs.
         #   - ssh-copy-id is preferred because it handles authorised_keys
         #     updates safely on the remote host.
+        #   - Repeat runs are treated as success even when the key is
+        #     already present on the remote host.
         # ================================================================
         set -eu
         . '{{.TASK_HELPERS_FILE}}'
@@ -376,15 +378,32 @@ tasks:
         echo ''
         echo '--- Add SSH key to Proxmox ---'
 
-        ssh-copy-id \
+        output_file='{{.SSH_KEY_DIR}}/ssh-copy-id.proxmox.out'
+        rm -f "$output_file"
+
+        if ! ssh-copy-id \
           -i '{{.KEY_PATH}}.pub' \
           -p "$proxmox_ssh_port" \
           -o ConnectTimeout="$ssh_connect_timeout" \
           -o StrictHostKeyChecking=yes \
-          "$proxmox_ssh_user@$proxmox_ssh_host"
+          "$proxmox_ssh_user@$proxmox_ssh_host" \
+          >"$output_file" 2>&1; then
+          cat "$output_file" >&2
+          rm -f "$output_file"
+          exit 1
+        fi
 
-        echo ''
-        echo "Public key added to $proxmox_ssh_user@$proxmox_ssh_host"
+        cat "$output_file"
+
+        if grep -Fq 'All keys were skipped because they already exist on the remote system.' "$output_file"; then
+          echo ''
+          echo "Public key already present on $proxmox_ssh_user@$proxmox_ssh_host"
+        else
+          echo ''
+          echo "Public key added to $proxmox_ssh_user@$proxmox_ssh_host"
+        fi
+
+        rm -f "$output_file"
 
   known-hosts:reconcile:
     desc: Reconcile plain-text known_hosts entries and remove stale host keys

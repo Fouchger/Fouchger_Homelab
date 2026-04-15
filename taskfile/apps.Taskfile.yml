@@ -67,7 +67,7 @@ tasks:
           task apps:code-server          Install code-server
           task apps:python3              Install Python 3 and packaging prerequisites
           task apps:pipx                 Install pipx and update the user path
-          task apps:ansible              Install or upgrade Ansible in pipx
+          # task apps:ansible              Install or upgrade Ansible in pipx
           task apps:ansible:collections  Install repository Ansible collections
           task apps:terraform            Install Terraform
           task apps:packer               Install Packer
@@ -84,7 +84,32 @@ tasks:
   bootstrap:
     desc: Install the core homelab applications and host prerequisites
     cmds:
-      - task: upgrade
+      - |
+        # ================================================================
+        # Task: apps:bootstrap
+        # Purpose:
+        #   Install or verify the core homelab applications used by this
+        #   repository.
+        #
+        # Notes:
+        #   - RUN_UPGRADE=1 performs apt update and full-upgrade first.
+        #   - Default behaviour skips host upgrade to keep bootstrap runs
+        #     faster and less noisy.
+        # ================================================================
+        set -eu
+
+        run_upgrade='{{.RUN_UPGRADE | default "0"}}'
+        if [ "$run_upgrade" = '1' ]; then
+          echo 'Running host package upgrade before application bootstrap.'
+        else
+          echo 'Skipping host package upgrade. Set RUN_UPGRADE=1 to enable it.'
+        fi
+      - |
+        set -eu
+        run_upgrade='{{.RUN_UPGRADE | default "0"}}'
+        if [ "$run_upgrade" = '1' ]; then
+          task apps:upgrade
+        fi
       - task: code-server
       - task: python3
       - task: pipx
@@ -286,8 +311,9 @@ tasks:
 
   ansible:collections:
     desc: Install or upgrade repository Ansible collections
+    deps:
+      - ansible
     cmds:
-      - task: ansible
       - |
         # ================================================================
         # Task: apps:ansible:collections
@@ -439,7 +465,7 @@ tasks:
         report_cmd 'terraform' 'terraform' 'terraform version'
         report_cmd 'packer' 'packer' 'packer version'
         report_cmd 'openssl' 'openssl' 'openssl version'
-        report_cmd 'arp-scan' 'arp-scan' 'arp-scan version'
+        report_cmd 'arp-scan' 'arp-scan' 'arp-scan --version'
 
         echo
         echo 'Supporting configuration'

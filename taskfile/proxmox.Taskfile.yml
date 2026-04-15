@@ -75,9 +75,6 @@ tasks:
 
         The SSH connection path is ready, the automation API identity
         has been reconciled, and node metadata has been discovered.
-
-        Next recommended task:
-          task proxmox:report
         EOF
 
   api:ensure:
