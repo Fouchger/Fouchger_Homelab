@@ -1,0 +1,367 @@
+# ================================================================
+# File: taskfile/proxmox_lxc.Taskfile.yml
+# Purpose:
+#   Manage repository-aligned Proxmox LXC workflows that upload an
+#   LXC helper to the Proxmox host, run a shared remote workflow,
+#   and reconcile discovered metadata into the local Ansible
+#   inventory.
+#
+# Notes:
+#   - This file complements the existing Proxmox automation and VM
+#     workflow task domains.
+#   - It is designed for Community Scripts style LXC helper scripts
+#     that ultimately call build.func start and build_container.
+#   - Strict recreate mode is enforced. If the target CTID already
+#     exists, it is stopped and destroyed before the helper script is
+#     executed again.
+# ================================================================
+version: '3'
+
+silent: true
+
+vars:
+  TASKFILE: '{{.TASKFILE | default "taskfile/proxmox_lxc.Taskfile.yml"}}'
+
+  SSH_KEY_DIR: '{{.HOME}}/.ssh'
+  KEY_NAME: 'id_ed25519'
+  SSH_KEY_FILE: '{{.SSH_KEY_DIR}}/{{.KEY_NAME}}'
+  SSH_KNOWN_HOSTS_FILE: '{{.SSH_KEY_DIR}}/known_hosts'
+
+  INVENTORY_FILE: '{{.ROOT_DIR}}/state/ansible/inventory.yml'
+
+  DEFAULT_PROXMOX_SSH_PORT: '{{.PROXMOX_SSH_PORT | default "22"}}'
+  DEFAULT_PROXMOX_SSH_USER: '{{.PROXMOX_SSH_USER | default "root"}}'
+  DEFAULT_SSH_CONNECT_TIMEOUT: '{{.SSH_CONNECT_TIMEOUT | default "5"}}'
+
+  LXC_HELPERS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_helper_scripts'
+  LXC_WORKFLOWS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_workflows'
+  DEFAULT_WORKFLOW_SCRIPT: '{{.LXC_WORKFLOWS_DIR}}/generic-lxc-discovery.sh'
+
+  DEFAULT_REMOTE_TMP_PREFIX: 'proxmox-lxc'
+  DEFAULT_REMOTE_RESULT_FILE: 'lxc-discovery.env'
+  DEFAULT_REMOTE_WORKFLOW_NAME: 'generic-lxc-discovery.sh'
+  DEFAULT_LXC_PRIMARY_NIC: 'net0'
+
+tasks:
+  tasklist:
+    desc: Show available Proxmox LXC tasks
+    cmds:
+      - task --taskfile {{.TASKFILE}} --list
+
+  help:
+    desc: Show the Proxmox LXC workflow task menu
+    cmds:
+      - |
+        cat <<'EOF2'
+        Proxmox LXC workflow tasks:
+          task proxmox_lxc:help
+          task proxmox_lxc:tasklist
+          task proxmox_lxc:inventory:report
+
+        Workflow building blocks:
+          task proxmox_lxc:inventory:update INVENTORY_GROUP=<group> LXC_HOSTNAME=<host> LXC_CTID=<ctid> LXC_MAC=<mac>
+          task proxmox_lxc:workflow:run HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> LXC_DEFAULT_ID=<id> LXC_DEFAULT_HOSTNAME=<name>
+          task proxmox_lxc:create:standard HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> LXC_DEFAULT_ID=<id> LXC_DEFAULT_HOSTNAME=<name>
+
+        Behaviour:
+          - Strict recreate is always used.
+          - If the target CTID already exists, it is stopped and destroyed.
+          - After recreation, inventory metadata is updated and ansible_host IP refresh runs.
+
+        Expected repository paths:
+          LXC helper scripts:  scripts/proxmox_helper_scripts/
+          Shared workflows:    scripts/proxmox_workflows/
+          Local inventory:     state/ansible/inventory.yml
+        EOF2
+
+  inventory:report:
+    desc: Show the current Proxmox LXC inventory location
+    cmds:
+      - |
+        # ================================================================
+        # Task: inventory:report
+        # Purpose:
+        #   Show the repository-local inventory path used by the
+        #   Proxmox LXC workflow tasks.
+        # ================================================================
+        set -eu
+
+        echo '--- Proxmox LXC inventory ---'
+        echo 'Inventory file: {{.INVENTORY_FILE}}'
+
+  inventory:update:
+    desc: Update the local Ansible inventory with discovered LXC metadata
+    requires:
+      vars:
+        - INVENTORY_GROUP
+        - LXC_HOSTNAME
+        - LXC_CTID
+        - LXC_MAC
+    cmds:
+      - task: :proxmox_vm:inventory:update
+        vars:
+          INVENTORY_GROUP: '{{.INVENTORY_GROUP}}'
+          VM_HOSTNAME: '{{.LXC_HOSTNAME}}'
+          VM_IP: '{{default "" .LXC_IP}}'
+          VM_VMID: '{{.LXC_CTID}}'
+          VM_MAC: '{{.LXC_MAC}}'
+          VM_BRIDGE: '{{default "" .LXC_BRIDGE}}'
+          VM_PRIMARY_NIC: '{{default .DEFAULT_LXC_PRIMARY_NIC .LXC_PRIMARY_NIC}}'
+
+  workflow:run:
+    desc: Upload and run a strict-recreate Proxmox LXC workflow on the Proxmox host
+    requires:
+      vars:
+        - HELPER_SCRIPT
+        - INVENTORY_GROUP
+        - LXC_DEFAULT_ID
+        - LXC_DEFAULT_HOSTNAME
+    deps:
+      - :ssh:generate
+      - :ssh:known-hosts:trust:proxmox
+      - :proxmox:node:discover
+    cmds:
+      - |
+        # ================================================================
+        # Task: workflow:run
+        # Purpose:
+        #   Upload a repository-managed LXC helper script to the Proxmox
+        #   host, execute the shared strict-recreate LXC workflow, then
+        #   reconcile discovered metadata into the local inventory.
+        # ================================================================
+        set -eu
+        . '{{.TASK_HELPERS_FILE}}'
+
+        require_command ssh
+        require_command scp
+
+        config_env_file='{{.CONFIG_ENV_FILE}}'
+        ssh_key_file='{{.SSH_KEY_FILE}}'
+        known_hosts_file='{{.SSH_KNOWN_HOSTS_FILE}}'
+        helper_script='{{.HELPER_SCRIPT}}'
+        workflow_script='{{default .DEFAULT_WORKFLOW_SCRIPT .WORKFLOW_SCRIPT}}'
+        inventory_group='{{.INVENTORY_GROUP}}'
+        lxc_default_id='{{.LXC_DEFAULT_ID}}'
+        lxc_default_hostname='{{.LXC_DEFAULT_HOSTNAME}}'
+        lxc_primary_nic='{{default .DEFAULT_LXC_PRIMARY_NIC .LXC_PRIMARY_NIC}}'
+        remote_tmp_prefix='{{default .DEFAULT_REMOTE_TMP_PREFIX .REMOTE_TMP_PREFIX}}'
+        helper_remote_name='{{default "" .HELPER_REMOTE_NAME}}'
+        workflow_remote_name='{{default .DEFAULT_REMOTE_WORKFLOW_NAME .WORKFLOW_REMOTE_NAME}}'
+        remote_result_file='{{default .DEFAULT_REMOTE_RESULT_FILE .REMOTE_RESULT_FILE}}'
+        remote_term="${TERM:-xterm-256color}"
+
+        [ -f "$config_env_file" ] || {
+          echo "Required config env file not found: $config_env_file" >&2
+          echo 'Run: task ssh:bootstrap first.' >&2
+          exit 1
+        }
+
+        [ -f "$ssh_key_file" ] || {
+          echo "Required SSH private key not found: $ssh_key_file" >&2
+          echo 'Run: task ssh:generate first.' >&2
+          exit 1
+        }
+
+        [ -f "$helper_script" ] || {
+          echo "Required LXC helper script not found: $helper_script" >&2
+          exit 1
+        }
+
+        [ -f "$workflow_script" ] || {
+          echo "Required LXC workflow script not found: $workflow_script" >&2
+          exit 1
+        }
+
+        proxmox_ssh_host="$(get_env_value "$config_env_file" PROXMOX_SSH_HOST || true)"
+        proxmox_ssh_port="$(get_env_value "$config_env_file" PROXMOX_SSH_PORT || true)"
+        proxmox_ssh_user="$(get_env_value "$config_env_file" PROXMOX_SSH_USER || true)"
+        ssh_connect_timeout="$(get_env_value "$config_env_file" SSH_CONNECT_TIMEOUT || true)"
+        proxmox_host_ip="$(get_env_value "$config_env_file" PROXMOX_HOST_IP || true)"
+
+        if [ -z "$proxmox_ssh_host" ]; then
+          proxmox_ssh_host="$proxmox_host_ip"
+        fi
+        if [ -z "$proxmox_ssh_port" ]; then
+          proxmox_ssh_port='{{.DEFAULT_PROXMOX_SSH_PORT}}'
+        fi
+        if [ -z "$proxmox_ssh_user" ]; then
+          proxmox_ssh_user='{{.DEFAULT_PROXMOX_SSH_USER}}'
+        fi
+        if [ -z "$ssh_connect_timeout" ]; then
+          ssh_connect_timeout='{{.DEFAULT_SSH_CONNECT_TIMEOUT}}'
+        fi
+        if [ -z "$proxmox_ssh_host" ]; then
+          echo 'PROXMOX_SSH_HOST or PROXMOX_HOST_IP is required in state/config/.env.' >&2
+          exit 1
+        fi
+
+        if [ -z "$helper_remote_name" ]; then
+          helper_remote_name="$(basename "$helper_script")"
+        fi
+
+        session_log="$(mktemp)"
+        local_helper_stage=''
+        local_workflow_stage=''
+        remote_tmp_dir=''
+        remote_exit_code=0
+
+        cleanup() {
+          rm -f "$session_log" >/dev/null 2>&1 || true
+
+          if [ -n "$local_helper_stage" ]; then
+            rm -f "$local_helper_stage" >/dev/null 2>&1 || true
+          fi
+
+          if [ -n "$local_workflow_stage" ]; then
+            rm -f "$local_workflow_stage" >/dev/null 2>&1 || true
+          fi
+
+          if [ -n "$remote_tmp_dir" ]; then
+            ssh \
+              -i "$ssh_key_file" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$known_hosts_file" \
+              -o ConnectTimeout="$ssh_connect_timeout" \
+              -p "$proxmox_ssh_port" \
+              "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+              "rm -rf '$remote_tmp_dir'" >/dev/null 2>&1 || true
+          fi
+        }
+        trap cleanup EXIT
+
+        install -d -m 700 "$(dirname "$known_hosts_file")"
+        touch "$known_hosts_file"
+        chmod 600 "$known_hosts_file"
+
+        remote_tmp_dir="$(ssh \
+          -i "$ssh_key_file" \
+          -o BatchMode=yes \
+          -o StrictHostKeyChecking=yes \
+          -o UserKnownHostsFile="$known_hosts_file" \
+          -o ConnectTimeout="$ssh_connect_timeout" \
+          -p "$proxmox_ssh_port" \
+          "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+          "mktemp -d '/tmp/${remote_tmp_prefix}.XXXXXX'")"
+
+        [ -n "$remote_tmp_dir" ] || {
+          echo 'Failed to create a remote temporary directory on Proxmox.' >&2
+          exit 1
+        }
+
+        local_helper_stage="$(mktemp)"
+        local_workflow_stage="$(mktemp)"
+
+        cp "$helper_script" "$local_helper_stage"
+        cp "$workflow_script" "$local_workflow_stage"
+        chmod 700 "$local_helper_stage" "$local_workflow_stage"
+
+        scp \
+          -i "$ssh_key_file" \
+          -o BatchMode=yes \
+          -o StrictHostKeyChecking=yes \
+          -o UserKnownHostsFile="$known_hosts_file" \
+          -o ConnectTimeout="$ssh_connect_timeout" \
+          -P "$proxmox_ssh_port" \
+          "$local_helper_stage" \
+          "${proxmox_ssh_user}@${proxmox_ssh_host}:${remote_tmp_dir}/${helper_remote_name}" >/dev/null
+
+        scp \
+          -i "$ssh_key_file" \
+          -o BatchMode=yes \
+          -o StrictHostKeyChecking=yes \
+          -o UserKnownHostsFile="$known_hosts_file" \
+          -o ConnectTimeout="$ssh_connect_timeout" \
+          -P "$proxmox_ssh_port" \
+          "$local_workflow_stage" \
+          "${proxmox_ssh_user}@${proxmox_ssh_host}:${remote_tmp_dir}/${workflow_remote_name}" >/dev/null
+
+        ssh \
+          -i "$ssh_key_file" \
+          -o BatchMode=yes \
+          -o StrictHostKeyChecking=yes \
+          -o UserKnownHostsFile="$known_hosts_file" \
+          -o ConnectTimeout="$ssh_connect_timeout" \
+          -p "$proxmox_ssh_port" \
+          "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+          "chmod 700 '${remote_tmp_dir}/${helper_remote_name}' '${remote_tmp_dir}/${workflow_remote_name}'" >/dev/null
+
+        ssh \
+          -tt \
+          -i "$ssh_key_file" \
+          -o StrictHostKeyChecking=yes \
+          -o UserKnownHostsFile="$known_hosts_file" \
+          -o ConnectTimeout="$ssh_connect_timeout" \
+          -p "$proxmox_ssh_port" \
+          "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+          "cd '${remote_tmp_dir}' && LXC_DEFAULT_ID='${lxc_default_id}' LXC_DEFAULT_HOSTNAME='${lxc_default_hostname}' LXC_PRIMARY_NIC='${lxc_primary_nic}' REMOTE_TMP_DIR='${remote_tmp_dir}' REMOTE_TERM='${remote_term}' HELPER_SCRIPT_NAME='${helper_remote_name}' RESULT_FILE='${remote_result_file}' bash '${remote_tmp_dir}/${workflow_remote_name}'" \
+          | tee "$session_log" || remote_exit_code=$?
+
+        result_payload="$(ssh \
+          -i "$ssh_key_file" \
+          -o BatchMode=yes \
+          -o StrictHostKeyChecking=yes \
+          -o UserKnownHostsFile="$known_hosts_file" \
+          -o ConnectTimeout="$ssh_connect_timeout" \
+          -p "$proxmox_ssh_port" \
+          "${proxmox_ssh_user}@${proxmox_ssh_host}" \
+          "if [ -f '${remote_tmp_dir}/${remote_result_file}' ]; then cat '${remote_tmp_dir}/${remote_result_file}'; fi" || true)"
+
+        lxc_created="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_CREATED=//p' | tail -n 1 | tr -d '\r')"
+        lxc_recreated="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_RECREATED=//p' | tail -n 1 | tr -d '\r')"
+        lxc_ctid="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_CTID=//p' | tail -n 1 | tr -d '\r')"
+        lxc_hostname="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_HOSTNAME=//p' | tail -n 1 | tr -d '\r')"
+        lxc_mac="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_MAC=//p' | tail -n 1 | tr -d '\r')"
+        lxc_bridge="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_BRIDGE=//p' | tail -n 1 | tr -d '\r')"
+        lxc_ip="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_IP=//p' | tail -n 1 | tr -d '\r')"
+        lxc_primary_nic_result="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_PRIMARY_NIC=//p' | tail -n 1 | tr -d '\r')"
+
+        if [ -z "$lxc_ctid" ] || [ -z "$lxc_hostname" ] || [ -z "$lxc_mac" ]; then
+          if [ "$remote_exit_code" -ne 0 ]; then
+            echo "Remote LXC workflow failed. Review the console output above. Exit code: $remote_exit_code" >&2
+          else
+            echo 'Remote workflow did not return a complete result payload.' >&2
+          fi
+          exit 1
+        fi
+
+        if [ "$lxc_recreated" = '1' ]; then
+          echo "Strictly recreated LXC $lxc_ctid ($lxc_hostname) on Proxmox"
+        elif [ "$lxc_created" = '1' ]; then
+          echo "Created LXC $lxc_ctid ($lxc_hostname) on Proxmox"
+        else
+          echo "Reconciled LXC $lxc_ctid ($lxc_hostname) on Proxmox"
+        fi
+
+        task proxmox_lxc:inventory:update \
+          INVENTORY_GROUP="$inventory_group" \
+          LXC_HOSTNAME="$lxc_hostname" \
+          LXC_IP="$lxc_ip" \
+          LXC_CTID="$lxc_ctid" \
+          LXC_MAC="$lxc_mac" \
+          LXC_BRIDGE="$lxc_bridge" \
+          LXC_PRIMARY_NIC="$lxc_primary_nic_result"
+
+        task proxmox_vm:inventory:ips:refresh
+
+  create:standard:
+    desc: Standard template for a server-specific Proxmox LXC create task
+    requires:
+      vars:
+        - HELPER_SCRIPT
+        - INVENTORY_GROUP
+        - LXC_DEFAULT_ID
+        - LXC_DEFAULT_HOSTNAME
+    cmds:
+      - task: :proxmox_lxc:workflow:run
+        vars:
+          HELPER_SCRIPT: '{{.HELPER_SCRIPT}}'
+          WORKFLOW_SCRIPT: '{{default .DEFAULT_WORKFLOW_SCRIPT .WORKFLOW_SCRIPT}}'
+          INVENTORY_GROUP: '{{.INVENTORY_GROUP}}'
+          LXC_DEFAULT_ID: '{{.LXC_DEFAULT_ID}}'
+          LXC_DEFAULT_HOSTNAME: '{{.LXC_DEFAULT_HOSTNAME}}'
+          LXC_PRIMARY_NIC: '{{default .DEFAULT_LXC_PRIMARY_NIC .LXC_PRIMARY_NIC}}'
+          REMOTE_TMP_PREFIX: '{{default .LXC_DEFAULT_HOSTNAME .REMOTE_TMP_PREFIX}}'
+          HELPER_REMOTE_NAME: '{{default "" .HELPER_REMOTE_NAME}}'
+          WORKFLOW_REMOTE_NAME: '{{default .DEFAULT_REMOTE_WORKFLOW_NAME .WORKFLOW_REMOTE_NAME}}'
+          REMOTE_RESULT_FILE: '{{default .DEFAULT_REMOTE_RESULT_FILE .REMOTE_RESULT_FILE}}'

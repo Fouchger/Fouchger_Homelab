@@ -42,6 +42,7 @@ includes:
   apps: ./taskfile/apps.Taskfile.yml
   proxmox: ./taskfile/proxmox.Taskfile.yml
   proxmox_vm: ./taskfile/proxmox_vm.Taskfile.yml
+  proxmox_lxc: ./taskfile/proxmox_lxc.Taskfile.yml
   proxmox_scripts: ./taskfile/proxmox_scripts.Taskfile.yml
 
 tasks:
@@ -137,6 +138,22 @@ tasks:
           VM Creation:
             task proxmox_scripts:mikrotik-routeros    Create or reconcile the MikroTik RouterOS CHR VM
             task proxmox_scripts:opnsense             Create or reconcile the OPNsense VM
+
+        Proxmox LXC workflows:
+          Setup:
+            task proxmox_lxc:help                     Show the Proxmox LXC workflow task menu
+            task proxmox_lxc:inventory:report         Show the current LXC inventory file path
+
+          Workflow building blocks:
+            task proxmox_lxc:inventory:update         Update the local Ansible inventory for an LXC
+            task proxmox_lxc:workflow:run             Upload and run a strict-recreate LXC workflow on Proxmox
+            task proxmox_lxc:create:standard          Standard template for a server-specific LXC task
+
+          LXC Creation:
+            task proxmox_scripts:technitiumdns        Strictly recreate the Technitium DNS LXC
+            task proxmox_scripts:pihole              Strictly recreate the Pi-hole LXC
+            task proxmox_scripts:unbound             Strictly recreate the Unbound LXC
+            task proxmox_scripts:calibre-web         Strictly recreate the Calibre-Web LXC
 
         Applications:
           Setup:

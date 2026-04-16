@@ -4,7 +4,9 @@
 #   Wrappers to create VM and LXC workloads.
 #
 # Notes:
-#   - This file provides thin wrappers over the shared proxmox_vm tasks.
+#   - VM wrappers call the shared proxmox_vm workflow.
+#   - LXC wrappers call the shared proxmox_lxc workflow.
+#   - LXC wrappers use strict recreate behaviour.
 # ================================================================
 version: '3'
 
@@ -42,3 +44,55 @@ tasks:
           VM_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'opnsense-vm'
           HELPER_REMOTE_NAME: 'opnsense-vm.sh'
+
+  technitiumdns:
+    desc: Strictly recreate the Technitium DNS LXC
+    cmds:
+      - task: :proxmox_lxc:create:standard
+        vars:
+          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/technitiumdns.sh'
+          INVENTORY_GROUP: 'dns'
+          LXC_DEFAULT_ID: '22010'
+          LXC_DEFAULT_HOSTNAME: 'technitium01'
+          LXC_PRIMARY_NIC: 'net0'
+          REMOTE_TMP_PREFIX: 'technitiumdns'
+          HELPER_REMOTE_NAME: 'technitiumdns.sh'
+
+  pihole:
+    desc: Strictly recreate the Pi-hole LXC
+    cmds:
+      - task: :proxmox_lxc:create:standard
+        vars:
+          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/pihole.sh'
+          INVENTORY_GROUP: 'dns'
+          LXC_DEFAULT_ID: '22011'
+          LXC_DEFAULT_HOSTNAME: 'pihole01'
+          LXC_PRIMARY_NIC: 'net0'
+          REMOTE_TMP_PREFIX: 'pihole'
+          HELPER_REMOTE_NAME: 'pihole.sh'
+
+  unbound:
+    desc: Strictly recreate the Unbound LXC
+    cmds:
+      - task: :proxmox_lxc:create:standard
+        vars:
+          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/unbound.sh'
+          INVENTORY_GROUP: 'dns'
+          LXC_DEFAULT_ID: '22012'
+          LXC_DEFAULT_HOSTNAME: 'unbound01'
+          LXC_PRIMARY_NIC: 'net0'
+          REMOTE_TMP_PREFIX: 'unbound'
+          HELPER_REMOTE_NAME: 'unbound.sh'
+
+  calibre-web:
+    desc: Strictly recreate the Calibre-Web LXC
+    cmds:
+      - task: :proxmox_lxc:create:standard
+        vars:
+          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/calibre-web.sh'
+          INVENTORY_GROUP: 'media'
+          LXC_DEFAULT_ID: '22020'
+          LXC_DEFAULT_HOSTNAME: 'calibre01'
+          LXC_PRIMARY_NIC: 'net0'
+          REMOTE_TMP_PREFIX: 'calibre-web'
+          HELPER_REMOTE_NAME: 'calibre-web.sh'
