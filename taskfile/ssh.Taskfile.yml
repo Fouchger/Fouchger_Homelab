@@ -66,13 +66,12 @@ tasks:
 
   bootstrap:
     desc: Run the recommended first-time SSH bootstrap flow for Proxmox access
-    deps:
-      - proxmox:connection:ensure
-      - generate
-      - known-hosts:trust:proxmox
-      - key:add:proxmox
-      - report
     cmds:
+      - task: proxmox:connection:ensure
+      - task: generate
+      - task: known-hosts:trust:proxmox
+      - task: key:add:proxmox
+      - task: report
       - |
         # ================================================================
         # Task: bootstrap
@@ -81,10 +80,10 @@ tasks:
         #   Proxmox access.
         # ================================================================
         set -eu
-
+  
         cat <<'EOF'
         SSH bootstrap complete.
-
+  
         The local SSH key is ready, the Proxmox host key is trusted,
         and passwordless SSH access has been ensured for the Proxmox host.
         EOF
