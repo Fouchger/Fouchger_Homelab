@@ -21,6 +21,7 @@ result_file="${RESULT_FILE:-vm-discovery.env}"
 vm_default_id="${VM_DEFAULT_ID:?VM_DEFAULT_ID is required}"
 vm_default_hostname="${VM_DEFAULT_HOSTNAME:?VM_DEFAULT_HOSTNAME is required}"
 vm_primary_nic="${VM_PRIMARY_NIC:-net0}"
+approve_recreate="${APPROVE_RECREATE:-false}"
 
 helper_script_path="${remote_tmp_dir}/${helper_script_name}"
 result_path="${remote_tmp_dir}/${result_file}"
@@ -35,11 +36,24 @@ command -v qm >/dev/null 2>&1 || {
   exit 1
 }
 
-chmod 700 "$helper_script_path"
-bash "$helper_script_path"
-
 vm_created='0'
+vm_skipped='0'
+
 if qm status "$vm_default_id" >/dev/null 2>&1; then
+  if [ "$approve_recreate" != 'true' ]; then
+    vm_skipped='1'
+  else
+    echo "VM $vm_default_id already exists and APPROVE_RECREATE=true was provided." >&2
+    echo 'Explicit VM recreate is not implemented in the shared VM workflow yet.' >&2
+    exit 1
+  fi
+else
+  chmod 700 "$helper_script_path"
+  bash "$helper_script_path"
+  qm status "$vm_default_id" >/dev/null 2>&1 || {
+    echo "Expected VM $vm_default_id was not found after helper execution." >&2
+    exit 1
+  }
   vm_created='1'
 fi
 
@@ -80,6 +94,7 @@ fi
 
 cat > "$result_path" <<EOF
 RESULT_CREATED=${vm_created}
+RESULT_SKIPPED=${vm_skipped}
 RESULT_VMID=${vmid}
 RESULT_HOSTNAME=${hostname}
 RESULT_MAC=${mac_address}

@@ -64,8 +64,8 @@ tasks:
         Workflow building blocks:
           task proxmox_vm:password:ensure SECRET_NAME=<name>
           task proxmox_vm:inventory:update INVENTORY_GROUP=<group> VM_HOSTNAME=<host> VM_VMID=<vmid> VM_MAC=<mac>
-          task proxmox_vm:workflow:run HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> VM_DEFAULT_ID=<id> VM_DEFAULT_HOSTNAME=<name>
-          task proxmox_vm:create:standard SERVER_NAME=<name> SECRET_NAME=<secret> HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> VM_DEFAULT_ID=<id> VM_DEFAULT_HOSTNAME=<name>
+          task proxmox_vm:workflow:run HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> VM_DEFAULT_ID=<id> VM_DEFAULT_HOSTNAME=<name> [APPROVE_RECREATE=true]
+          task proxmox_vm:create:standard SERVER_NAME=<name> SECRET_NAME=<secret> HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> VM_DEFAULT_ID=<id> VM_DEFAULT_HOSTNAME=<name> [APPROVE_RECREATE=true]
 
         Expected repository paths:
           VM helper scripts:   scripts/proxmox_helper_scripts/
@@ -470,7 +470,7 @@ tasks:
             -o ConnectTimeout="$ssh_connect_timeout" \
             -p "$proxmox_ssh_port" \
             "${proxmox_ssh_user}@${proxmox_ssh_host}" \
-            "cd '${remote_tmp_dir}' && VM_DEFAULT_ID='${vm_default_id}' VM_DEFAULT_HOSTNAME='${vm_default_hostname}' VM_PRIMARY_NIC='${vm_primary_nic}' REMOTE_TMP_DIR='${remote_tmp_dir}' REMOTE_TERM='${remote_term}' HELPER_SCRIPT_NAME='${helper_remote_name}' RESULT_FILE='${remote_result_file}' bash '${remote_tmp_dir}/${workflow_remote_name}'" \
+            "cd '${remote_tmp_dir}' && VM_DEFAULT_ID='${vm_default_id}' VM_DEFAULT_HOSTNAME='${vm_default_hostname}' VM_PRIMARY_NIC='${vm_primary_nic}' REMOTE_TMP_DIR='${remote_tmp_dir}' REMOTE_TERM='${remote_term}' HELPER_SCRIPT_NAME='${helper_remote_name}' RESULT_FILE='${remote_result_file}' APPROVE_RECREATE='{{default "false" .APPROVE_RECREATE}}' bash '${remote_tmp_dir}/${workflow_remote_name}'" \
             | tee "$session_log" || remote_exit_code=$?
 
           result_payload="$(ssh \
@@ -484,6 +484,7 @@ tasks:
             "if [ -f '${remote_tmp_dir}/${remote_result_file}' ]; then cat '${remote_tmp_dir}/${remote_result_file}'; fi" || true)"
 
           vm_created="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_CREATED=//p' | tail -n 1 | tr -d '\r')"
+          vm_skipped="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_SKIPPED=//p' | tail -n 1 | tr -d '\r')"
           vm_vmid="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_VMID=//p' | tail -n 1 | tr -d '\r')"
           vm_hostname="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_HOSTNAME=//p' | tail -n 1 | tr -d '\r')"
           vm_mac="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_MAC=//p' | tail -n 1 | tr -d '\r')"
@@ -499,7 +500,9 @@ tasks:
             exit 1
           fi
 
-          if [ "$vm_created" = '1' ]; then
+          if [ "$vm_skipped" = '1' ]; then
+            echo "Skipped VM $vm_vmid ($vm_hostname) because it already exists and recreate was not approved"
+          elif [ "$vm_created" = '1' ]; then
             echo "Created VM $vm_vmid ($vm_hostname) on Proxmox"
           else
             echo "Reconciled existing VM $vm_vmid ($vm_hostname) on Proxmox"
@@ -543,6 +546,7 @@ tasks:
           HELPER_REMOTE_NAME: '{{default "" .HELPER_REMOTE_NAME}}'
           WORKFLOW_REMOTE_NAME: '{{default .DEFAULT_REMOTE_WORKFLOW_NAME .WORKFLOW_REMOTE_NAME}}'
           REMOTE_RESULT_FILE: '{{default .DEFAULT_REMOTE_RESULT_FILE .REMOTE_RESULT_FILE}}'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   inventory:ips:refresh:
     desc: Refresh ansible_host values for all inventory hosts using Proxmox and local discovery

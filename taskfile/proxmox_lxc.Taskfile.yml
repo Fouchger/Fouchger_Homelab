@@ -60,7 +60,7 @@ tasks:
 
         Workflow building blocks:
           task proxmox_lxc:inventory:update INVENTORY_GROUP=<group> LXC_HOSTNAME=<host> LXC_CTID=<ctid> LXC_MAC=<mac>
-          task proxmox_lxc:workflow:run HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> LXC_DEFAULT_ID=<id> LXC_DEFAULT_HOSTNAME=<name>
+          task proxmox_lxc:workflow:run HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> LXC_DEFAULT_ID=<id> LXC_DEFAULT_HOSTNAME=<name> [APPROVE_RECREATE=true]
           task proxmox_lxc:create:standard HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> LXC_DEFAULT_ID=<id> LXC_DEFAULT_HOSTNAME=<name>
 
         Behaviour:
@@ -294,7 +294,7 @@ tasks:
           -o ConnectTimeout="$ssh_connect_timeout" \
           -p "$proxmox_ssh_port" \
           "${proxmox_ssh_user}@${proxmox_ssh_host}" \
-          "cd '${remote_tmp_dir}' && LXC_DEFAULT_ID='${lxc_default_id}' LXC_DEFAULT_HOSTNAME='${lxc_default_hostname}' LXC_PRIMARY_NIC='${lxc_primary_nic}' REMOTE_TMP_DIR='${remote_tmp_dir}' REMOTE_TERM='${remote_term}' HELPER_SCRIPT_NAME='${helper_remote_name}' RESULT_FILE='${remote_result_file}' bash '${remote_tmp_dir}/${workflow_remote_name}'" \
+          "cd '${remote_tmp_dir}' && LXC_DEFAULT_ID='${lxc_default_id}' LXC_DEFAULT_HOSTNAME='${lxc_default_hostname}' LXC_PRIMARY_NIC='${lxc_primary_nic}' REMOTE_TMP_DIR='${remote_tmp_dir}' REMOTE_TERM='${remote_term}' HELPER_SCRIPT_NAME='${helper_remote_name}' RESULT_FILE='${remote_result_file}' APPROVE_RECREATE='{{default "false" .APPROVE_RECREATE}}' bash '${remote_tmp_dir}/${workflow_remote_name}'" \
           | tee "$session_log" || remote_exit_code=$?
 
         result_payload="$(ssh \
@@ -309,6 +309,7 @@ tasks:
 
         lxc_created="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_CREATED=//p' | tail -n 1 | tr -d '\r')"
         lxc_recreated="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_RECREATED=//p' | tail -n 1 | tr -d '\r')"
+        lxc_skipped="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_SKIPPED=//p' | tail -n 1 | tr -d '\r')"
         lxc_ctid="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_CTID=//p' | tail -n 1 | tr -d '\r')"
         lxc_hostname="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_HOSTNAME=//p' | tail -n 1 | tr -d '\r')"
         lxc_mac="$(printf '%s\n' "$result_payload" | sed -n 's/^RESULT_MAC=//p' | tail -n 1 | tr -d '\r')"
@@ -325,7 +326,9 @@ tasks:
           exit 1
         fi
 
-        if [ "$lxc_recreated" = '1' ]; then
+        if [ "$lxc_skipped" = '1' ]; then
+          echo "Skipped LXC $lxc_ctid ($lxc_hostname) because it already exists and recreate was not approved"
+        elif [ "$lxc_recreated" = '1' ]; then
           echo "Strictly recreated LXC $lxc_ctid ($lxc_hostname) on Proxmox"
         elif [ "$lxc_created" = '1' ]; then
           echo "Created LXC $lxc_ctid ($lxc_hostname) on Proxmox"
@@ -345,7 +348,7 @@ tasks:
         task proxmox_vm:inventory:ips:refresh
 
   create:standard:
-    desc: Standard template for a server-specific Proxmox LXC create task
+    desc: Standard template for a server-specific Proxmox LXC create or skip task
     requires:
       vars:
         - HELPER_SCRIPT
@@ -365,3 +368,4 @@ tasks:
           HELPER_REMOTE_NAME: '{{default "" .HELPER_REMOTE_NAME}}'
           WORKFLOW_REMOTE_NAME: '{{default .DEFAULT_REMOTE_WORKFLOW_NAME .WORKFLOW_REMOTE_NAME}}'
           REMOTE_RESULT_FILE: '{{default .DEFAULT_REMOTE_RESULT_FILE .REMOTE_RESULT_FILE}}'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'

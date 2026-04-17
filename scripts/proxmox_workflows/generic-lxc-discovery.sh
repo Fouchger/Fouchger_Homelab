@@ -11,9 +11,8 @@
 #   - The helper script named by HELPER_SCRIPT_NAME is expected to
 #     create the target LXC container using the Community Scripts
 #     build.func workflow.
-#   - Strict recreate mode is enforced. If the CTID already exists,
-#     the existing container is stopped and destroyed before the
-#     helper script is executed.
+#   - Existing containers are skipped by default. Recreate behaviour
+#     requires APPROVE_RECREATE=true.
 #   - Discovery uses pct config output and then attempts to read the
 #     guest IPv4 address from inside the running container.
 # ================================================================
@@ -25,6 +24,7 @@ result_file="${RESULT_FILE:-lxc-discovery.env}"
 lxc_default_id="${LXC_DEFAULT_ID:?LXC_DEFAULT_ID is required}"
 lxc_default_hostname="${LXC_DEFAULT_HOSTNAME:?LXC_DEFAULT_HOSTNAME is required}"
 lxc_primary_nic="${LXC_PRIMARY_NIC:-net0}"
+approve_recreate="${APPROVE_RECREATE:-false}"
 
 helper_script_path="${remote_tmp_dir}/${helper_script_name}"
 result_path="${remote_tmp_dir}/${result_file}"
@@ -40,23 +40,32 @@ command -v pct >/dev/null 2>&1 || {
 }
 
 strict_recreated='0'
+ct_created='0'
+ct_skipped='0'
+
 if pct status "$lxc_default_id" >/dev/null 2>&1; then
-  strict_recreated='1'
-  pct stop "$lxc_default_id" --timeout 30 >/dev/null 2>&1 || true
-  pct destroy "$lxc_default_id" --force 1 >/dev/null 2>&1 || true
+  if [ "$approve_recreate" = 'true' ]; then
+    strict_recreated='1'
+    pct stop "$lxc_default_id" --timeout 30 >/dev/null 2>&1 || true
+    pct destroy "$lxc_default_id" --force 1 >/dev/null 2>&1 || true
+  else
+    ct_skipped='1'
+  fi
 fi
 
-chmod 700 "$helper_script_path"
-export var_ctid="$lxc_default_id"
-export var_hostname="$lxc_default_hostname"
-bash "$helper_script_path"
+if [ "$ct_skipped" != '1' ]; then
+  chmod 700 "$helper_script_path"
+  export var_ctid="$lxc_default_id"
+  export var_hostname="$lxc_default_hostname"
+  bash "$helper_script_path"
 
-pct status "$lxc_default_id" >/dev/null 2>&1 || {
-  echo "Expected LXC container $lxc_default_id was not found after helper execution." >&2
-  exit 1
-}
+  pct status "$lxc_default_id" >/dev/null 2>&1 || {
+    echo "Expected LXC container $lxc_default_id was not found after helper execution." >&2
+    exit 1
+  }
 
-ct_created='1'
+  ct_created='1'
+fi
 ctid="$lxc_default_id"
 hostname="$lxc_default_hostname"
 pct_config="$(pct config "$ctid")"
@@ -83,6 +92,7 @@ fi
 cat > "$result_path" <<EOF2
 RESULT_CREATED=${ct_created}
 RESULT_RECREATED=${strict_recreated}
+RESULT_SKIPPED=${ct_skipped}
 RESULT_CTID=${ctid}
 RESULT_HOSTNAME=${hostname}
 RESULT_MAC=${mac_address}

@@ -154,14 +154,14 @@ tasks:
 
           Workflow building blocks:
             task proxmox_lxc:inventory:update         Update the local Ansible inventory for an LXC
-            task proxmox_lxc:workflow:run             Upload and run a strict-recreate LXC workflow on Proxmox
+            task proxmox_lxc:workflow:run             Upload and run an LXC workflow on Proxmox, skipping existing containers by default
             task proxmox_lxc:create:standard          Standard template for a server-specific LXC task
 
           LXC Creation:
-            task proxmox_scripts:technitiumdns        Strictly recreate the Technitium DNS LXC
-            task proxmox_scripts:pihole              Strictly recreate the Pi-hole LXC
-            task proxmox_scripts:unbound             Strictly recreate the Unbound LXC
-            task proxmox_scripts:calibre-web         Strictly recreate the Calibre-Web LXC
+            task proxmox_scripts:technitiumdns        Create the Technitium DNS LXC or skip if it already exists
+            task proxmox_scripts:pihole              Create the Pi-hole LXC or skip if it already exists
+            task proxmox_scripts:unbound             Create the Unbound LXC or skip if it already exists
+            task proxmox_scripts:calibre-web         Create the Calibre-Web LXC or skip if it already exists
 
         Applications:
           Setup:

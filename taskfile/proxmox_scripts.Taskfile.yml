@@ -6,7 +6,8 @@
 # Notes:
 #   - VM wrappers call the shared proxmox_vm workflow.
 #   - LXC wrappers call the shared proxmox_lxc workflow.
-#   - LXC wrappers use strict recreate behaviour.
+#   - Existing VM and LXC workloads are skipped by default.
+#   - Set APPROVE_RECREATE=true to allow LXC recreation.
 # ================================================================
 version: '3'
 
@@ -29,6 +30,7 @@ tasks:
           VM_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'mikrotik-routeros'
           HELPER_REMOTE_NAME: 'mikrotik-routeros.sh'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   opnsense:
     desc: Create or reconcile the OPNsense VM
@@ -46,9 +48,10 @@ tasks:
           VM_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'opnsense-vm'
           HELPER_REMOTE_NAME: 'opnsense-vm.sh'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   technitiumdns:
-    desc: Strictly recreate the Technitium DNS LXC
+    desc: Create the Technitium DNS LXC, or skip if it already exists unless recreate is explicitly approved
     cmds:
       - task: :proxmox_lxc:create:standard
         vars:
@@ -59,9 +62,10 @@ tasks:
           LXC_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'technitiumdns'
           HELPER_REMOTE_NAME: 'technitiumdns.sh'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   pihole:
-    desc: Strictly recreate the Pi-hole LXC
+    desc: Create the Pi-hole LXC, or skip if it already exists unless recreate is explicitly approved
     cmds:
       - task: :proxmox_lxc:create:standard
         vars:
@@ -72,9 +76,10 @@ tasks:
           LXC_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'pihole'
           HELPER_REMOTE_NAME: 'pihole.sh'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   unbound:
-    desc: Strictly recreate the Unbound LXC
+    desc: Create the Unbound LXC, or skip if it already exists unless recreate is explicitly approved
     cmds:
       - task: :proxmox_lxc:create:standard
         vars:
@@ -85,9 +90,10 @@ tasks:
           LXC_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'unbound'
           HELPER_REMOTE_NAME: 'unbound.sh'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   calibre-web:
-    desc: Strictly recreate the Calibre-Web LXC
+    desc: Create the Calibre-Web LXC, or skip if it already exists unless recreate is explicitly approved
     cmds:
       - task: :proxmox_lxc:create:standard
         vars:
@@ -98,3 +104,4 @@ tasks:
           LXC_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'calibre-web'
           HELPER_REMOTE_NAME: 'calibre-web.sh'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
