@@ -52,7 +52,7 @@ tasks:
         vars:
           HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/technitiumdns.sh'
           INVENTORY_GROUP: 'dns'
-          LXC_DEFAULT_ID: '22010'
+          LXC_DEFAULT_ID: '22000'
           LXC_DEFAULT_HOSTNAME: 'technitium01'
           LXC_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'technitiumdns'

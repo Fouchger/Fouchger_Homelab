@@ -191,3 +191,5 @@ tasks:
       - task: ssh:bootstrap
       - task: apps:bootstrap
       - task: proxmox:bootstrap
+      - task: proxmox_scripts:mikrotik-routeros
+      - task: proxmox_scripts:technitiumdns
