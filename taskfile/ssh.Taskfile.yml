@@ -105,14 +105,8 @@ tasks:
         chmod 700 '{{.SSH_KEY_DIR}}'
 
         if [ ! -f '{{.CONFIG_ENV_FILE}}' ]; then
-          cat > '{{.CONFIG_ENV_FILE}}' <<'ENVEOF'
-        # ================================================================
-        # File: state/config/.env
-        # Purpose:
-        #   Local non-sensitive homelab configuration values.
-        # ================================================================
-        ENVEOF
-          chmod 600 '{{.CONFIG_ENV_FILE}}'
+          echo 'Missing state/config/.env. Run ./install.sh first.' >&2
+          exit 1
         fi
 
         if [ ! -f '{{.SSH_KNOWN_HOSTS_FILE}}' ]; then

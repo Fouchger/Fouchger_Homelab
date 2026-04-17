@@ -569,7 +569,7 @@ _dotenv_upsert() {
 #   - Generates only the active local env file content.
 # ----------------------------
 _render_state_env_content() {
-  local repo_dir_value="${TARGET_DIR}"
+  local root_dir_value="${TARGET_DIR}"
   local github_repo_value="${REPO_SLUG}"
   local github_branch_value="${BRANCH}"
   local setup_value="${SETUP}"
@@ -588,7 +588,7 @@ _render_state_env_content() {
 #   - Multi-line values are intentionally not supported here.
 # ################################################################
 
-REPO_DIR=${repo_dir_value}
+ROOT_DIR=${root_dir_value}
 GITHUB_REPO=${github_repo_value}
 GITHUB_BRANCH=${github_branch_value}
 SETUP=${setup_value}

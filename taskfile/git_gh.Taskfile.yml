@@ -188,14 +188,8 @@ tasks:
         mkdir -p '{{.CONFIG_DIR}}' '{{.PASSWORDS_DIR}}' '{{.TMP_DIR}}'
 
         if [ ! -f '{{.CONFIG_ENV_FILE}}' ]; then
-          cat > '{{.CONFIG_ENV_FILE}}' <<'EOF'
-        # ================================================================
-        # File: state/config/.env
-        # Purpose:
-        #   Local non-sensitive homelab configuration values.
-        # ================================================================
-        EOF
-          chmod 600 '{{.CONFIG_ENV_FILE}}'
+          echo 'Missing state/config/.env. Run ./install.sh first.' >&2
+          exit 1
         fi
 
   config:git:
