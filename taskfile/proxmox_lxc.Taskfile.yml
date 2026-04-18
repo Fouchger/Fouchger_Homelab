@@ -49,10 +49,8 @@ tasks:
           task proxmox_lxc:tasklist
           task proxmox_lxc:inventory:report
 
-        Workflow building blocks:
-          task proxmox_lxc:inventory:update INVENTORY_GROUP=<group> LXC_HOSTNAME=<host> LXC_CTID=<ctid> LXC_MAC=<mac>
-          task proxmox_lxc:workflow:run HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> LXC_DEFAULT_ID=<id> LXC_DEFAULT_HOSTNAME=<name> [APPROVE_RECREATE=true]
-          task proxmox_lxc:create:standard HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> LXC_DEFAULT_ID=<id> LXC_DEFAULT_HOSTNAME=<name>
+        LXC creation tasks are exposed through the proxmox_scripts namespace.
+        Shared workflow and inventory helper tasks are intentionally hidden.
 
         Behaviour:
           - Existing LXCs are skipped by default.
@@ -81,6 +79,7 @@ tasks:
         echo 'Inventory file: {{.INVENTORY_FILE}}'
 
   inventory:update:
+    internal: true
     desc: Update the local Ansible inventory with discovered LXC metadata
     requires:
       vars:
@@ -100,6 +99,7 @@ tasks:
           VM_PRIMARY_NIC: '{{default .DEFAULT_LXC_PRIMARY_NIC .LXC_PRIMARY_NIC}}'
 
   workflow:run:
+    internal: true
     desc: Upload and run an approval-gated Proxmox LXC workflow on the Proxmox host
     requires:
       vars:
@@ -339,6 +339,7 @@ tasks:
         task proxmox_vm:inventory:ips:refresh
 
   create:standard:
+    internal: true
     desc: Standard template for a server-specific Proxmox LXC create or skip task
     requires:
       vars:

@@ -51,12 +51,10 @@ tasks:
           task proxmox_vm:help
           task proxmox_vm:tasklist
           task proxmox_vm:inventory:report
+          task proxmox_vm:inventory:ips:refresh
 
-        Workflow building blocks:
-          task proxmox_vm:password:ensure SECRET_NAME=<name>
-          task proxmox_vm:inventory:update INVENTORY_GROUP=<group> VM_HOSTNAME=<host> VM_VMID=<vmid> VM_MAC=<mac>
-          task proxmox_vm:workflow:run HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> VM_DEFAULT_ID=<id> VM_DEFAULT_HOSTNAME=<name> [APPROVE_RECREATE=true]
-          task proxmox_vm:create:standard SERVER_NAME=<name> SECRET_NAME=<secret> HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> VM_DEFAULT_ID=<id> VM_DEFAULT_HOSTNAME=<name> [APPROVE_RECREATE=true]
+        VM creation tasks are exposed through the proxmox_scripts namespace.
+        Shared workflow and inventory helper tasks are intentionally hidden.
 
         Expected repository paths:
           VM helper scripts:   scripts/proxmox_helper_scripts/
@@ -80,6 +78,7 @@ tasks:
         echo 'Inventory file: {{.INVENTORY_FILE}}'
 
   password:ensure:
+    internal: true
     desc: Ensure a named VM bootstrap password exists in the encrypted passwords env
     requires:
       vars:
@@ -172,6 +171,7 @@ tasks:
         echo "Stored $secret_name in $passwords_enc_file"
 
   inventory:update:
+    internal: true
     desc: Update the local Ansible inventory with discovered VM metadata
     requires:
       vars:
@@ -265,6 +265,7 @@ tasks:
         echo "Updated $inventory_file with $vm_hostname under group $inventory_group"
 
   workflow:run:
+    internal: true
     desc: Upload and run a VM helper plus shared workflow on Proxmox
     requires:
       vars:
@@ -506,6 +507,7 @@ tasks:
           task proxmox_vm:inventory:ips:refresh
 
   create:standard:
+    internal: true
     desc: Standard template for a server-specific Proxmox VM create task
     requires:
       vars:

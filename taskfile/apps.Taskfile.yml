@@ -136,6 +136,7 @@ tasks:
           ARGS: 'autoclean -y'
 
   apt:wait:
+    internal: true
     desc: Wait until apt and dpkg locks are released
     cmds:
       - |
@@ -169,6 +170,7 @@ tasks:
         done
 
   apt:run:
+    internal: true
     desc: Run apt-get with lock handling by passing ARGS="..."
     vars:
       ARGS: '{{.ARGS | default ""}}'
@@ -183,12 +185,14 @@ tasks:
         {{.SUDO}} {{.APT_GET}} {{.ARGS}}
 
   apt:update:
+    internal: true
     desc: Run apt-get update with lock handling
     cmds:
       - task: apt:wait
       - '{{.SUDO}} {{.APT_GET}} update'
 
   apt:install:
+    internal: true
     desc: Run apt-get install with lock handling by passing PKGS="..."
     vars:
       PKGS: '{{.PKGS | default ""}}'
@@ -339,6 +343,7 @@ tasks:
         "${ansible_galaxy_cmd}" collection install -r ansible/requirements.yml --force
 
   hashicorp-repo:
+    internal: true
     desc: Configure the HashiCorp apt repository for Terraform and Packer
     cmds:
       - task: apt:update
