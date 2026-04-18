@@ -535,7 +535,7 @@ tasks:
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   inventory:ips:refresh:
-    desc: Refresh ansible_host values for all inventory hosts using Proxmox and local discovery
+    desc: Refresh ansible_host values for all inventory hosts using remote Proxmox and local discovery
     deps:
       - :ssh:generate
       - :ssh:known-hosts:trust:proxmox
@@ -549,13 +549,17 @@ tasks:
           #   for all inventory entries that contain vmid metadata.
           #
           # Notes:
+          #   - Commands run on admin01.
+          #   - Proxmox CLI commands are executed remotely over SSH.
           #   - Works for both QEMU VMs and LXCs.
           #   - Discovery order:
           #       1. QEMU guest agent on Proxmox
-          #       2. LXC IPv4 from pct exec
+          #       2. LXC IPv4 from pct exec on Proxmox
           #       3. Proxmox neighbour table by MAC
-          #       4. Local arp-scan by MAC
-          #   - Inventory is only updated when an IPv4 address is found.
+          #       4. Local arp-scan on admin01 by MAC
+          #   - Only valid IPv4 addresses are written back.
+          #   - Invalid or stale ansible_host values are removed when
+          #     discovery fails.
           # ================================================================
           set -eu
           . '{{.TASK_HELPERS_FILE}}'
@@ -597,12 +601,6 @@ tasks:
           trap 'rm -f "$tmp_hosts_file" "$tmp_results_file"' EXIT
 
           python3 - "$inventory_file" > "$tmp_hosts_file" <<'PY'
-          # ================================================================
-          # File: inventory host extractor
-          # Purpose:
-          #   Emit one line per inventory host as:
-          #   group|hostname|vmid|mac_address
-          # ================================================================
           import sys
           from pathlib import Path
 
@@ -628,13 +626,19 @@ tasks:
                   print(f"{group_name}|{hostname}|{vmid}|{mac}")
           PY
 
+          is_valid_ipv4() {
+            printf '%s\n' "$1" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'
+          }
+
           while IFS='|' read -r inventory_group vm_hostname vm_vmid vm_mac; do
             [ -n "$vm_hostname" ] || continue
             [ -n "$vm_vmid" ] || continue
 
+            echo "Checking $vm_hostname (vmid $vm_vmid)"
+
             discovered_ip=''
 
-            discovered_ip="$(ssh \
+            discovered_ip="$(ssh -n \
               -i "$ssh_key_file" \
               -o BatchMode=yes \
               -o StrictHostKeyChecking=yes \
@@ -645,8 +649,12 @@ tasks:
               "qm guest cmd '$vm_vmid' network-get-interfaces 2>/dev/null | jq -r '.[] | .[\"ip-addresses\"][]? | select(.[\"ip-address-type\"] == \"ipv4\") | .[\"ip-address\"]' | grep -v '^127\\.' | head -n 1" \
               2>/dev/null | tr -d '\r' || true)"
 
+            if ! is_valid_ipv4 "$discovered_ip"; then
+              discovered_ip=''
+            fi
+
             if [ -z "$discovered_ip" ]; then
-              discovered_ip="$(ssh \
+              discovered_ip="$(ssh -n \
                 -i "$ssh_key_file" \
                 -o BatchMode=yes \
                 -o StrictHostKeyChecking=yes \
@@ -654,12 +662,16 @@ tasks:
                 -o ConnectTimeout="$ssh_connect_timeout" \
                 -p "$proxmox_ssh_port" \
                 "${proxmox_ssh_user}@${proxmox_ssh_host}" \
-                "pct exec '$vm_vmid' -- sh -c \"ip -o -4 addr show scope global 2>/dev/null | awk '{print \\\$4}' | cut -d/ -f1 | head -n 1\"" \
+                "pct exec '$vm_vmid' -- hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$' | grep -v '^127\\.' | head -n 1" \
                 2>/dev/null | tr -d '\r' || true)"
             fi
 
+            if ! is_valid_ipv4 "$discovered_ip"; then
+              discovered_ip=''
+            fi
+
             if [ -z "$discovered_ip" ] && [ -n "$vm_mac" ]; then
-              discovered_ip="$(ssh \
+              discovered_ip="$(ssh -n \
                 -i "$ssh_key_file" \
                 -o BatchMode=yes \
                 -o StrictHostKeyChecking=yes \
@@ -671,6 +683,10 @@ tasks:
                 2>/dev/null | tr -d '\r' || true)"
             fi
 
+            if ! is_valid_ipv4 "$discovered_ip"; then
+              discovered_ip=''
+            fi
+
             if [ -z "$discovered_ip" ] && [ -n "$vm_mac" ] && command -v arp-scan >/dev/null 2>&1; then
               discovered_ip="$(arp-scan --localnet 2>/dev/null | awk -v target="$vm_mac" '
                 toupper($2) == toupper(target) {
@@ -680,26 +696,21 @@ tasks:
               ')"
             fi
 
+            if ! is_valid_ipv4 "$discovered_ip"; then
+              discovered_ip=''
+            fi
+
+            printf '%s|%s|%s\n' "$inventory_group" "$vm_hostname" "$discovered_ip" >> "$tmp_results_file"
+
             if [ -n "$discovered_ip" ]; then
-              printf '%s|%s|%s\n' "$inventory_group" "$vm_hostname" "$discovered_ip" >> "$tmp_results_file"
               echo "Discovered IP for $vm_hostname: $discovered_ip"
             else
-              echo "No IP discovered for $vm_hostname"
+              echo "No valid IP discovered for $vm_hostname"
             fi
           done < "$tmp_hosts_file"
 
-          if [ ! -s "$tmp_results_file" ]; then
-            echo 'No inventory hosts produced a discoverable IP address.'
-            exit 0
-          fi
-
           python3 - "$inventory_file" "$tmp_results_file" <<'PY'
-          # ================================================================
-          # File: inventory IP updater
-          # Purpose:
-          #   Update ansible_host for inventory hosts from a discovered
-          #   group|hostname|ip result file.
-          # ================================================================
+          import re
           import sys
           from pathlib import Path
 
@@ -713,16 +724,21 @@ tasks:
           inventory_path = Path(sys.argv[1])
           results_path = Path(sys.argv[2])
 
+          ipv4_pattern = re.compile(r'^[0-9]{1,3}(?:\.[0-9]{1,3}){3}$')
+
           with inventory_path.open('r', encoding='utf-8') as handle:
               inventory = yaml.safe_load(handle) or {}
 
           updates = {}
           with results_path.open('r', encoding='utf-8') as handle:
               for raw_line in handle:
-                  line = raw_line.strip()
+                  line = raw_line.rstrip('\n')
                   if not line:
                       continue
                   group_name, hostname, ip_address = line.split('|', 2)
+                  ip_address = ip_address.strip()
+                  if ip_address and not ipv4_pattern.match(ip_address):
+                      ip_address = ''
                   updates[(group_name, hostname)] = ip_address
 
           children = ((inventory.get('all') or {}).get('children') or {})
@@ -731,9 +747,13 @@ tasks:
               for hostname, host_data in hosts.items():
                   if not isinstance(host_data, dict):
                       continue
-                  ip_address = updates.get((group_name, hostname))
+                  if (group_name, hostname) not in updates:
+                      continue
+                  ip_address = updates[(group_name, hostname)]
                   if ip_address:
                       host_data['ansible_host'] = ip_address
+                  else:
+                      host_data.pop('ansible_host', None)
 
           with inventory_path.open('w', encoding='utf-8') as handle:
               yaml.safe_dump(inventory, handle, sort_keys=False, default_flow_style=False)

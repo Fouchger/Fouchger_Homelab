@@ -56,12 +56,14 @@ tasks:
       - task: :proxmox_lxc:create:standard
         vars:
           HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/technitiumdns.sh'
+          WORKFLOW_SCRIPT: 'scripts/proxmox_workflows/generic-lxc-discovery.sh'
           INVENTORY_GROUP: 'dns'
           LXC_DEFAULT_ID: '22000'
           LXC_DEFAULT_HOSTNAME: 'technitium01'
           LXC_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'technitiumdns'
           HELPER_REMOTE_NAME: 'technitiumdns.sh'
+          WORKFLOW_REMOTE_NAME: 'generic-lxc-discovery.sh'
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   pihole:
@@ -70,12 +72,14 @@ tasks:
       - task: :proxmox_lxc:create:standard
         vars:
           HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/pihole.sh'
+          WORKFLOW_SCRIPT: 'scripts/proxmox_workflows/generic-lxc-discovery.sh'
           INVENTORY_GROUP: 'dns'
           LXC_DEFAULT_ID: '22011'
           LXC_DEFAULT_HOSTNAME: 'pihole01'
           LXC_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'pihole'
           HELPER_REMOTE_NAME: 'pihole.sh'
+          WORKFLOW_REMOTE_NAME: 'generic-lxc-discovery.sh'
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   unbound:
@@ -84,12 +88,14 @@ tasks:
       - task: :proxmox_lxc:create:standard
         vars:
           HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/unbound.sh'
+          WORKFLOW_SCRIPT: 'scripts/proxmox_workflows/generic-lxc-discovery.sh'
           INVENTORY_GROUP: 'dns'
           LXC_DEFAULT_ID: '22012'
           LXC_DEFAULT_HOSTNAME: 'unbound01'
           LXC_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'unbound'
           HELPER_REMOTE_NAME: 'unbound.sh'
+          WORKFLOW_REMOTE_NAME: 'generic-lxc-discovery.sh'
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   calibre-web:
@@ -98,11 +104,13 @@ tasks:
       - task: :proxmox_lxc:create:standard
         vars:
           HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/calibre-web.sh'
+          WORKFLOW_SCRIPT: 'scripts/proxmox_workflows/generic-lxc-discovery.sh'
           INVENTORY_GROUP: 'media'
           LXC_DEFAULT_ID: '22020'
           LXC_DEFAULT_HOSTNAME: 'calibre01'
           LXC_PRIMARY_NIC: 'net0'
           REMOTE_TMP_PREFIX: 'calibre-web'
           HELPER_REMOTE_NAME: 'calibre-web.sh'
+          WORKFLOW_REMOTE_NAME: 'generic-lxc-discovery.sh'
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 

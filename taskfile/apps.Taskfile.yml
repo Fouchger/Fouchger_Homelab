@@ -429,11 +429,19 @@ tasks:
           app_name="$1"
           app_cmd="$2"
           version_cmd="${3:-}"
+          fallback_cmd="${4:-}"
 
+          resolved_cmd=''
           if command -v "${app_cmd}" >/dev/null 2>&1; then
+            resolved_cmd="$(command -v "${app_cmd}")"
+          elif [ -n "${fallback_cmd}" ] && [ -x "${fallback_cmd}" ]; then
+            resolved_cmd="${fallback_cmd}"
+          fi
+
+          if [ -n "${resolved_cmd}" ]; then
             printf '[OK] %-20s installed\n' "${app_name}"
             if [ -n "${version_cmd}" ]; then
-              sh -c "${version_cmd}" 2>/dev/null | head -n 1 | sed 's/^/      version: /' || true
+              APP_CMD_PATH="${resolved_cmd}" sh -c "${version_cmd}" 2>/dev/null | head -n 1 | sed 's/^/      version: /' || true
             fi
           else
             printf '[MISSING] %-15s not installed\n' "${app_name}"
@@ -460,8 +468,8 @@ tasks:
         report_cmd 'code-server' 'code-server' 'code-server --version'
         report_cmd 'python3' 'python3' 'python3 --version'
         report_cmd 'pipx' 'pipx' 'pipx --version'
-        report_cmd 'ansible' 'ansible' 'ansible --version'
-        report_cmd 'ansible-galaxy' 'ansible-galaxy' 'ansible-galaxy --version'
+        report_cmd 'ansible' 'ansible' '"${APP_CMD_PATH}" --version' '${HOME}/.local/bin/ansible'
+        report_cmd 'ansible-galaxy' 'ansible-galaxy' '"${APP_CMD_PATH}" --version' '${HOME}/.local/bin/ansible-galaxy'
         report_cmd 'terraform' 'terraform' 'terraform version'
         report_cmd 'packer' 'packer' 'packer version'
         report_cmd 'openssl' 'openssl' 'openssl version'

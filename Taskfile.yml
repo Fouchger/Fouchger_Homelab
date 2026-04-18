@@ -170,6 +170,7 @@ tasks:
             task proxmox_lxc:inventory:update         Update the local Ansible inventory for an LXC
             task proxmox_lxc:workflow:run             Upload and run an LXC workflow on Proxmox, skipping existing containers by default
             task proxmox_lxc:create:standard          Standard template for a server-specific LXC task
+            task proxmox_lxc:inventory:ips:refresh    Refresh ansible_host values for all inventory hosts using Proxmox and local discovery
 
           LXC Creation:
             task proxmox_scripts:technitiumdns        Create the Technitium DNS LXC or skip if it already exists
@@ -215,3 +216,5 @@ tasks:
       - task: proxmox:bootstrap
       - task: proxmox_scripts:mikrotik-routeros
       - task: proxmox_scripts:technitiumdns
+      - task: proxmox_vm:inventory:ips:refresh
+      - task: proxmox_lxc:inventory:ips:refresh
