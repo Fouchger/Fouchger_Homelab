@@ -11,9 +11,8 @@
 #     workflow task domains.
 #   - It is designed for Community Scripts style LXC helper scripts
 #     that ultimately call build.func start and build_container.
-#   - Strict recreate mode is enforced. If the target CTID already
-#     exists, it is stopped and destroyed before the helper script is
-#     executed again.
+#   - Existing containers are skipped by default.
+#   - Recreate or destroy actions require APPROVE_RECREATE=true.
 # ================================================================
 version: '3'
 
@@ -22,20 +21,12 @@ silent: true
 vars:
   TASKFILE: '{{.TASKFILE | default "taskfile/proxmox_lxc.Taskfile.yml"}}'
 
-  SSH_KEY_DIR: '{{.HOME}}/.ssh'
-  KEY_NAME: 'id_ed25519'
-  SSH_KEY_FILE: '{{.SSH_KEY_DIR}}/{{.KEY_NAME}}'
-  SSH_KNOWN_HOSTS_FILE: '{{.SSH_KEY_DIR}}/known_hosts'
-
-  INVENTORY_FILE: '{{.ROOT_DIR}}/state/ansible/inventory.yml'
-
-  DEFAULT_PROXMOX_SSH_PORT: '{{.PROXMOX_SSH_PORT | default "22"}}'
-  DEFAULT_PROXMOX_SSH_USER: '{{.PROXMOX_SSH_USER | default "root"}}'
-  DEFAULT_SSH_CONNECT_TIMEOUT: '{{.SSH_CONNECT_TIMEOUT | default "5"}}'
+  DEFAULT_PROXMOX_SSH_PORT: '{{.PROXMOX_SSH_PORT}}'
+  DEFAULT_PROXMOX_SSH_USER: '{{.PROXMOX_SSH_USER}}'
+  DEFAULT_SSH_CONNECT_TIMEOUT: '{{.SSH_CONNECT_TIMEOUT}}'
 
   LXC_HELPERS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_helper_scripts'
-  LXC_WORKFLOWS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_workflows'
-  DEFAULT_WORKFLOW_SCRIPT: '{{.LXC_WORKFLOWS_DIR}}/generic-lxc-discovery.sh'
+  DEFAULT_WORKFLOW_SCRIPT: '{{.ROOT_DIR}}/scripts/proxmox_workflows/generic-lxc-discovery.sh'
 
   DEFAULT_REMOTE_TMP_PREFIX: 'proxmox-lxc'
   DEFAULT_REMOTE_RESULT_FILE: 'lxc-discovery.env'
@@ -64,8 +55,8 @@ tasks:
           task proxmox_lxc:create:standard HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> LXC_DEFAULT_ID=<id> LXC_DEFAULT_HOSTNAME=<name>
 
         Behaviour:
-          - Strict recreate is always used.
-          - If the target CTID already exists, it is stopped and destroyed.
+          - Existing LXCs are skipped by default.
+          - Recreate or destroy requires APPROVE_RECREATE=true.
           - After recreation, inventory metadata is updated and ansible_host IP refresh runs.
 
         Expected repository paths:
@@ -109,7 +100,7 @@ tasks:
           VM_PRIMARY_NIC: '{{default .DEFAULT_LXC_PRIMARY_NIC .LXC_PRIMARY_NIC}}'
 
   workflow:run:
-    desc: Upload and run a strict-recreate Proxmox LXC workflow on the Proxmox host
+    desc: Upload and run an approval-gated Proxmox LXC workflow on the Proxmox host
     requires:
       vars:
         - HELPER_SCRIPT
@@ -126,7 +117,7 @@ tasks:
         # Task: workflow:run
         # Purpose:
         #   Upload a repository-managed LXC helper script to the Proxmox
-        #   host, execute the shared strict-recreate LXC workflow, then
+        #   host, execute the shared approval-gated LXC workflow, then
         #   reconcile discovered metadata into the local inventory.
         # ================================================================
         set -eu
@@ -329,7 +320,7 @@ tasks:
         if [ "$lxc_skipped" = '1' ]; then
           echo "Skipped LXC $lxc_ctid ($lxc_hostname) because it already exists and recreate was not approved"
         elif [ "$lxc_recreated" = '1' ]; then
-          echo "Strictly recreated LXC $lxc_ctid ($lxc_hostname) on Proxmox"
+          echo "Recreated LXC $lxc_ctid ($lxc_hostname) on Proxmox"
         elif [ "$lxc_created" = '1' ]; then
           echo "Created LXC $lxc_ctid ($lxc_hostname) on Proxmox"
         else

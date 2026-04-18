@@ -24,21 +24,12 @@ silent: true
 vars:
   TASKFILE: '{{.TASKFILE | default "taskfile/proxmox_vm.Taskfile.yml"}}'
 
-  SSH_KEY_DIR: '{{.HOME}}/.ssh'
-  KEY_NAME: 'id_ed25519'
-  SSH_KEY_FILE: '{{.SSH_KEY_DIR}}/{{.KEY_NAME}}'
-  SSH_KNOWN_HOSTS_FILE: '{{.SSH_KEY_DIR}}/known_hosts'
-
-  INVENTORY_DIR: '{{.ROOT_DIR}}/state/ansible'
-  INVENTORY_FILE: '{{.INVENTORY_DIR}}/inventory.yml'
-
-  DEFAULT_PROXMOX_SSH_PORT: '{{.PROXMOX_SSH_PORT | default "22"}}'
-  DEFAULT_PROXMOX_SSH_USER: '{{.PROXMOX_SSH_USER | default "root"}}'
-  DEFAULT_SSH_CONNECT_TIMEOUT: '{{.SSH_CONNECT_TIMEOUT | default "5"}}'
+  DEFAULT_PROXMOX_SSH_PORT: '{{.PROXMOX_SSH_PORT}}'
+  DEFAULT_PROXMOX_SSH_USER: '{{.PROXMOX_SSH_USER}}'
+  DEFAULT_SSH_CONNECT_TIMEOUT: '{{.SSH_CONNECT_TIMEOUT}}'
 
   VM_HELPERS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_helper_scripts'
-  VM_WORKFLOWS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_workflows'
-  DEFAULT_WORKFLOW_SCRIPT: '{{.VM_WORKFLOWS_DIR}}/generic-vm-discovery.sh'
+  DEFAULT_WORKFLOW_SCRIPT: '{{.ROOT_DIR}}/scripts/proxmox_workflows/generic-vm-discovery.sh'
 
   DEFAULT_REMOTE_TMP_PREFIX: 'proxmox-vm'
   DEFAULT_REMOTE_RESULT_FILE: 'vm-discovery.env'
@@ -95,6 +86,7 @@ tasks:
         - SECRET_NAME
     deps:
       - :secrets:prepare
+      - :secrets:passwords:ensure
     cmds:
       - |
         # ================================================================
@@ -125,12 +117,6 @@ tasks:
           echo 'Run: task secrets:prepare first.' >&2
           exit 1
         }
-
-        if [ ! -f "$passwords_enc_file" ]; then
-          ensure_parent_dir "$passwords_enc_file"
-          : > "$passwords_enc_file"
-          chmod 600 "$passwords_enc_file"
-        fi
 
         decrypt_tmp_file="$(mktemp)"
         trap 'rm -f "$decrypt_tmp_file"' EXIT

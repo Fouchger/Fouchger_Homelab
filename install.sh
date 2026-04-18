@@ -598,24 +598,30 @@ EOF
 
 # ----------------------------
 # Write or update canonical env files
+# Notes:
+#   - Preserves an existing env file and only upserts installer-managed keys.
+#   - Creates the env file through one standard process when it is missing.
 # ----------------------------
 _write_update_env_files() {
   local env_dir="${ROOT_DIR}/state/config"
   local env_file="${env_dir}/.env"
-  local tmp_env=""
 
   mkdir -p "${env_dir}"
 
-  tmp_env="$(mktemp)"
+  if [[ ! -f "${env_file}" ]]; then
+    _render_state_env_content local > "${env_file}"
+    chmod 0600 "${env_file}"
+    _success "Created ${env_file}"
+    return 0
+  fi
 
-  _render_state_env_content local > "${tmp_env}"
-
-  install -m 0600 "${tmp_env}" "${env_file}"
-
-  rm -f "${tmp_env}"
-
-  # _success "Updated ${example_file}"
-  _success "Updated ${env_file}"
+  _upsert_env_key "${env_file}" ROOT_DIR "${TARGET_DIR}"
+  _upsert_env_key "${env_file}" GITHUB_REPO "${REPO_SLUG}"
+  _upsert_env_key "${env_file}" GITHUB_BRANCH "${BRANCH}"
+  _upsert_env_key "${env_file}" SETUP "${SETUP}"
+  _upsert_env_key "${env_file}" NONINTERACTIVE "${NONINTERACTIVE}"
+  chmod 0600 "${env_file}"
+  _success "Preserved and updated ${env_file}"
 }
 
 # ----------------------------

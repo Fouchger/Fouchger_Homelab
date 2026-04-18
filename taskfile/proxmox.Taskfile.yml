@@ -19,21 +19,11 @@ version: '3'
 silent: true
 
 vars:
-  SSH_KEY_DIR: '{{.HOME}}/.ssh'
-  KEY_NAME: 'id_ed25519'
-  SSH_KEY_FILE: '{{.SSH_KEY_DIR}}/{{.KEY_NAME}}'
-  SSH_KNOWN_HOSTS_FILE: '{{.SSH_KEY_DIR}}/known_hosts'
-
   PVE_USER_NAME: '{{.PVE_USER_NAME | default "automation"}}'
   PVE_ROLE_NAME: '{{.PVE_ROLE_NAME | default "AutomationRole"}}'
   PVE_TOKEN_ID: '{{.PVE_TOKEN_ID | default "automation-token"}}'
   PVE_REALM: '{{.PVE_REALM | default "pam"}}'
   PVE_ROLE_PRIVS: '{{.PVE_ROLE_PRIVS | default "Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,VM.Allocate,VM.Audit,VM.Clone,VM.Console,VM.Config.CDROM,VM.Config.Cloudinit,VM.Config.CPU,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.PowerMgmt"}}'
-
-  PROXMOX_SSH_HOST: '{{.PROXMOX_SSH_HOST | default ""}}'
-  PROXMOX_SSH_PORT: '{{.PROXMOX_SSH_PORT | default "22"}}'
-  PROXMOX_SSH_USER: '{{.PROXMOX_SSH_USER | default "root"}}'
-  SSH_CONNECT_TIMEOUT: '{{.SSH_CONNECT_TIMEOUT | default "5"}}'
 
   DEFAULT_PROXMOX_TEMPLATE_DATASTORE: '{{.DEFAULT_PROXMOX_TEMPLATE_DATASTORE | default "local"}}'
   DEFAULT_PROXMOX_VM_DATASTORE: '{{.DEFAULT_PROXMOX_VM_DATASTORE | default "local-lvm"}}'
@@ -80,6 +70,7 @@ tasks:
   api:ensure:
     desc: Reconcile the Proxmox automation role, user, ACL, and token
     deps:
+      - :secrets:passwords:ensure
       - :ssh:generate
       - :ssh:known-hosts:trust:proxmox
     cmds:
@@ -134,12 +125,6 @@ tasks:
           echo 'Run: task secrets:prepare first.' >&2
           exit 1
         }
-
-        if [ ! -f "$passwords_enc_file" ]; then
-          ensure_parent_dir "$passwords_enc_file"
-          : > "$passwords_enc_file"
-          chmod 600 "$passwords_enc_file"
-        fi
 
         [ -f "$ssh_key_file" ] || {
           echo "Required SSH private key not found: $ssh_key_file" >&2
@@ -303,6 +288,7 @@ tasks:
   node:discover:
     desc: Discover node metadata and persist it for downstream automation use
     deps:
+      - :secrets:passwords:ensure
       - :ssh:generate
       - :ssh:known-hosts:trust:proxmox
     cmds:

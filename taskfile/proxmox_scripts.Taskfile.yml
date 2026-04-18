@@ -7,7 +7,7 @@
 #   - VM wrappers call the shared proxmox_vm workflow.
 #   - LXC wrappers call the shared proxmox_lxc workflow.
 #   - Existing VM and LXC workloads are skipped by default.
-#   - Set APPROVE_RECREATE=true to allow LXC recreation.
+#   - Set APPROVE_RECREATE=true to allow explicit VM or LXC recreation behaviour where implemented.
 # ================================================================
 version: '3'
 
@@ -105,3 +105,4 @@ tasks:
           REMOTE_TMP_PREFIX: 'calibre-web'
           HELPER_REMOTE_NAME: 'calibre-web.sh'
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
+

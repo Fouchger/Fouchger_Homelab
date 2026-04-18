@@ -39,13 +39,13 @@ command -v pct >/dev/null 2>&1 || {
   exit 1
 }
 
-strict_recreated='0'
+ct_recreated='0'
 ct_created='0'
 ct_skipped='0'
 
 if pct status "$lxc_default_id" >/dev/null 2>&1; then
   if [ "$approve_recreate" = 'true' ]; then
-    strict_recreated='1'
+    ct_recreated='1'
     pct stop "$lxc_default_id" --timeout 30 >/dev/null 2>&1 || true
     pct destroy "$lxc_default_id" --force 1 >/dev/null 2>&1 || true
   else
@@ -91,7 +91,7 @@ fi
 
 cat > "$result_path" <<EOF2
 RESULT_CREATED=${ct_created}
-RESULT_RECREATED=${strict_recreated}
+RESULT_RECREATED=${ct_recreated}
 RESULT_SKIPPED=${ct_skipped}
 RESULT_CTID=${ctid}
 RESULT_HOSTNAME=${hostname}

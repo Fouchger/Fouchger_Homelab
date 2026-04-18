@@ -28,5 +28,5 @@ scripts/                                  Shell helpers and installers
 docs/                                     Runbooks and supporting documentation
 state/                                    Local operator state, secrets, inventory, and generated files
 state/config/.env                         Safe non-sensitive config template
-state/secrets/passwordspasswords.enc.env  Safe secret key template
+state/secrets/passwords/passwords.enc.env Safe encrypted secret store
 
