@@ -32,6 +32,23 @@ tasks:
           HELPER_REMOTE_NAME: 'mikrotik-routeros.sh'
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
+  opnsense:
+    desc: Create or reconcile the OPNsense VM
+    cmds:
+      - task: :proxmox_vm:create:standard
+        vars:
+          SERVER_NAME: 'opnsense01'
+          SECRET_NAME: 'OPNSENSE01_PASSWORD'
+          SECRET_PROMPT: 'Enter bootstrap password for opnsense01: '
+          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/opnsense-vm.sh'
+          WORKFLOW_SCRIPT: 'scripts/proxmox_workflows/generic-vm-discovery.sh'
+          INVENTORY_GROUP: 'firewalls'
+          VM_DEFAULT_ID: '21001'
+          VM_DEFAULT_HOSTNAME: 'opnsense01'
+          VM_PRIMARY_NIC: 'net0'
+          REMOTE_TMP_PREFIX: 'opnsense-vm'
+          HELPER_REMOTE_NAME: 'opnsense-vm.sh'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   technitiumdns:
     desc: Create the Technitium DNS LXC, or skip if it already exists unless recreate is explicitly approved
@@ -47,36 +64,53 @@ tasks:
           REMOTE_TMP_PREFIX: 'technitiumdns'
           HELPER_REMOTE_NAME: 'technitiumdns.sh'
           WORKFLOW_REMOTE_NAME: 'generic-lxc-discovery.sh'
-          HELPER_ENV_FILE_CONTENT: |
-            export var_unprivileged='1'
-            export var_cpu='1'
-            export var_ram='1024'
-            export var_disk='5'
-            export var_brg='vmbr0'
-            export var_net='192.168.30.10/24'
-            export var_gateway='192.168.30.1'
-            export var_mtu=''
-            export var_vlan='30'
-            export var_mac='BC:24:11:86:A2:BA'
-            export var_ns='192.168.30.10'
-            export var_ipv6_method='auto'
-            export var_ssh='yes'
-            export var_ssh_authorized_key='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKZSTcjgRzpQbw0CB8lVqpCEyskAWiHxzRZ5K+tseCDz fouchger@outlook.com'
-            export var_apt_cacher='no'
-            export var_fuse='no'
-            export var_tun='no'
-            export var_gpu='no'
-            export var_nesting='1'
-            export var_keyctl='0'
-            export var_mknod='0'
-            export var_mount_fs=''
-            export var_protection='no'
-            export var_timezone='Pacific/Auckland'
-            export var_tags=''
-            export var_verbose='yes'
-            export var_hostname='technitium01'
-            export var_searchdomain='home.local'
-            export var_template_storage='local'
-            export var_container_storage='local-lvm'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
+
+  pihole:
+    desc: Create the Pi-hole LXC, or skip if it already exists unless recreate is explicitly approved
+    cmds:
+      - task: :proxmox_lxc:create:standard
+        vars:
+          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/pihole.sh'
+          WORKFLOW_SCRIPT: 'scripts/proxmox_workflows/generic-lxc-discovery.sh'
+          INVENTORY_GROUP: 'dns'
+          LXC_DEFAULT_ID: '22011'
+          LXC_DEFAULT_HOSTNAME: 'pihole01'
+          LXC_PRIMARY_NIC: 'net0'
+          REMOTE_TMP_PREFIX: 'pihole'
+          HELPER_REMOTE_NAME: 'pihole.sh'
+          WORKFLOW_REMOTE_NAME: 'generic-lxc-discovery.sh'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
+
+  unbound:
+    desc: Create the Unbound LXC, or skip if it already exists unless recreate is explicitly approved
+    cmds:
+      - task: :proxmox_lxc:create:standard
+        vars:
+          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/unbound.sh'
+          WORKFLOW_SCRIPT: 'scripts/proxmox_workflows/generic-lxc-discovery.sh'
+          INVENTORY_GROUP: 'dns'
+          LXC_DEFAULT_ID: '22012'
+          LXC_DEFAULT_HOSTNAME: 'unbound01'
+          LXC_PRIMARY_NIC: 'net0'
+          REMOTE_TMP_PREFIX: 'unbound'
+          HELPER_REMOTE_NAME: 'unbound.sh'
+          WORKFLOW_REMOTE_NAME: 'generic-lxc-discovery.sh'
+          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
+
+  calibre-web:
+    desc: Create the Calibre-Web LXC, or skip if it already exists unless recreate is explicitly approved
+    cmds:
+      - task: :proxmox_lxc:create:standard
+        vars:
+          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/calibre-web.sh'
+          WORKFLOW_SCRIPT: 'scripts/proxmox_workflows/generic-lxc-discovery.sh'
+          INVENTORY_GROUP: 'media'
+          LXC_DEFAULT_ID: '22020'
+          LXC_DEFAULT_HOSTNAME: 'calibre01'
+          LXC_PRIMARY_NIC: 'net0'
+          REMOTE_TMP_PREFIX: 'calibre-web'
+          HELPER_REMOTE_NAME: 'calibre-web.sh'
+          WORKFLOW_REMOTE_NAME: 'generic-lxc-discovery.sh'
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 

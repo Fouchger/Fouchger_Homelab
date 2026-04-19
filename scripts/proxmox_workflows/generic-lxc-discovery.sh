@@ -21,7 +21,6 @@ set -eu
 remote_tmp_dir="${REMOTE_TMP_DIR:?REMOTE_TMP_DIR is required}"
 helper_script_name="${HELPER_SCRIPT_NAME:?HELPER_SCRIPT_NAME is required}"
 result_file="${RESULT_FILE:-lxc-discovery.env}"
-helper_env_file="${HELPER_ENV_FILE:-}"
 lxc_default_id="${LXC_DEFAULT_ID:?LXC_DEFAULT_ID is required}"
 lxc_default_hostname="${LXC_DEFAULT_HOSTNAME:?LXC_DEFAULT_HOSTNAME is required}"
 lxc_primary_nic="${LXC_PRIMARY_NIC:-net0}"
@@ -56,18 +55,6 @@ fi
 
 if [ "$ct_skipped" != '1' ]; then
   chmod 700 "$helper_script_path"
-
-  if [ -n "$helper_env_file" ]; then
-    [ -f "$helper_env_file" ] || {
-      echo "Helper environment file not found: $helper_env_file" >&2
-      exit 1
-    }
-    set -a
-    # shellcheck disable=SC1090
-    . "$helper_env_file"
-    set +a
-  fi
-
   export var_ctid="$lxc_default_id"
   export var_hostname="$lxc_default_hostname"
   bash "$helper_script_path"

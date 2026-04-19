@@ -30,5 +30,3 @@ state/                                    Local operator state, secrets, invento
 state/config/.env                         Safe non-sensitive config template
 state/secrets/passwords/passwords.enc.env Safe encrypted secret store
 
-
-Technitium DNS: http://192.168.30.10:5380

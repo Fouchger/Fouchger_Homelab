@@ -149,7 +149,7 @@ tasks:
             exit 1
           fi
           printf 'Proxmox SSH host or IP address: ' >&2
-          IFS= read -r proxmox_ssh_host < /dev/tty || true
+          IFS= read -r proxmox_ssh_host
         fi
 
         if [ -z "$proxmox_ssh_port" ]; then
@@ -279,7 +279,7 @@ tasks:
 
         if [ "{{.NONINTERACTIVE}}" != "1" ]; then
           printf 'Trust this host key and add it to known_hosts? [y/N]: ' >&2
-          IFS= read -r confirm < /dev/tty || true
+          IFS= read -r confirm
           case "$confirm" in
             y|Y|yes|YES)
               ;;
