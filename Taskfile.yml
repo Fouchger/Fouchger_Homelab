@@ -202,7 +202,5 @@ tasks:
       - task: ssh:bootstrap
       - task: apps:bootstrap
       - task: proxmox:bootstrap
-      - task: proxmox_scripts:mikrotik-routeros
       - task: proxmox_scripts:technitiumdns
       - task: proxmox_vm:inventory:ips:refresh
-      - task: proxmox_lxc:inventory:ips:refresh
