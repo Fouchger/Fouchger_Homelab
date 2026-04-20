@@ -20,13 +20,18 @@ set -eu
 
 remote_tmp_dir="${REMOTE_TMP_DIR:?REMOTE_TMP_DIR is required}"
 helper_script_name="${HELPER_SCRIPT_NAME:?HELPER_SCRIPT_NAME is required}"
+helper_env_file_name="${HELPER_ENV_FILE_NAME:-}"
 result_file="${RESULT_FILE:-lxc-discovery.env}"
-lxc_default_id="${LXC_DEFAULT_ID:?LXC_DEFAULT_ID is required}"
-lxc_default_hostname="${LXC_DEFAULT_HOSTNAME:?LXC_DEFAULT_HOSTNAME is required}"
-lxc_primary_nic="${LXC_PRIMARY_NIC:-net0}"
+lxc_default_id="${LXC_DEFAULT_ID:-}"
+lxc_default_hostname="${LXC_DEFAULT_HOSTNAME:-}"
+lxc_primary_nic="${LXC_PRIMARY_NIC:-}"
 approve_recreate="${APPROVE_RECREATE:-false}"
 
 helper_script_path="${remote_tmp_dir}/${helper_script_name}"
+helper_env_path=''
+if [ -n "$helper_env_file_name" ]; then
+  helper_env_path="${remote_tmp_dir}/${helper_env_file_name}"
+fi
 result_path="${remote_tmp_dir}/${result_file}"
 
 command -v pct >/dev/null 2>&1 || {
@@ -43,6 +48,31 @@ strict_recreated='0'
 ct_created='0'
 ct_skipped='0'
 
+if [ -n "$helper_env_path" ] && [ -f "$helper_env_path" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$helper_env_path"
+  set +a
+fi
+
+: "${var_ctid:=$lxc_default_id}"
+: "${var_hostname:=$lxc_default_hostname}"
+: "${var_primary_nic:=${lxc_primary_nic:-net0}}"
+
+[ -n "$var_ctid" ] || {
+  echo 'A container ID is required. Set var_ctid in the helper env file or LXC_DEFAULT_ID.' >&2
+  exit 1
+}
+
+[ -n "$var_hostname" ] || {
+  echo 'A container hostname is required. Set var_hostname in the helper env file or LXC_DEFAULT_HOSTNAME.' >&2
+  exit 1
+}
+
+lxc_default_id="$var_ctid"
+lxc_default_hostname="$var_hostname"
+lxc_primary_nic="$var_primary_nic"
+
 if pct status "$lxc_default_id" >/dev/null 2>&1; then
   if [ "$approve_recreate" = 'true' ]; then
     strict_recreated='1'
@@ -55,8 +85,11 @@ fi
 
 if [ "$ct_skipped" != '1' ]; then
   chmod 700 "$helper_script_path"
-  export var_ctid="$lxc_default_id"
-  export var_hostname="$lxc_default_hostname"
+
+  export var_ctid
+  export var_hostname
+  export var_primary_nic="$lxc_primary_nic"
+
   bash "$helper_script_path"
 
   pct status "$lxc_default_id" >/dev/null 2>&1 || {

@@ -31,6 +31,7 @@ vars:
   DEFAULT_REMOTE_TMP_PREFIX: 'proxmox-lxc'
   DEFAULT_REMOTE_RESULT_FILE: 'lxc-discovery.env'
   DEFAULT_REMOTE_WORKFLOW_NAME: 'generic-lxc-discovery.sh'
+  DEFAULT_REMOTE_HELPER_ENV_NAME: 'helper.env'
   DEFAULT_LXC_PRIMARY_NIC: 'net0'
 
 tasks:
@@ -100,8 +101,6 @@ tasks:
       vars:
         - HELPER_SCRIPT
         - INVENTORY_GROUP
-        - LXC_DEFAULT_ID
-        - LXC_DEFAULT_HOSTNAME
     deps:
       - :ssh:generate
       - :ssh:known-hosts:trust:proxmox
@@ -127,14 +126,19 @@ tasks:
         helper_script='{{.HELPER_SCRIPT}}'
         workflow_script='{{default .DEFAULT_WORKFLOW_SCRIPT .WORKFLOW_SCRIPT}}'
         inventory_group='{{.INVENTORY_GROUP}}'
-        lxc_default_id='{{.LXC_DEFAULT_ID}}'
-        lxc_default_hostname='{{.LXC_DEFAULT_HOSTNAME}}'
-        lxc_primary_nic='{{default .DEFAULT_LXC_PRIMARY_NIC .LXC_PRIMARY_NIC}}'
+        lxc_default_id='{{default "" .LXC_DEFAULT_ID}}'
+        lxc_default_hostname='{{default "" .LXC_DEFAULT_HOSTNAME}}'
+        lxc_primary_nic='{{default "" .LXC_PRIMARY_NIC}}'
         remote_tmp_prefix='{{default .DEFAULT_REMOTE_TMP_PREFIX .REMOTE_TMP_PREFIX}}'
         helper_remote_name='{{default "" .HELPER_REMOTE_NAME}}'
         workflow_remote_name='{{default .DEFAULT_REMOTE_WORKFLOW_NAME .WORKFLOW_REMOTE_NAME}}'
+        helper_env_remote_name='{{default .DEFAULT_REMOTE_HELPER_ENV_NAME .HELPER_ENV_REMOTE_NAME}}'
         remote_result_file='{{default .DEFAULT_REMOTE_RESULT_FILE .REMOTE_RESULT_FILE}}'
         remote_term="${TERM:-xterm-256color}"
+        helper_env_file_content="$(cat <<'EOF2'
+        {{default "" .HELPER_ENV_FILE_CONTENT}}
+        EOF2
+        )"
 
         [ -f "$config_env_file" ] || {
           echo "Required config env file not found: $config_env_file" >&2
@@ -188,6 +192,7 @@ tasks:
         session_log="$(mktemp)"
         local_helper_stage=''
         local_workflow_stage=''
+        local_helper_env_stage=''
         remote_tmp_dir=''
         remote_exit_code=0
 
@@ -200,6 +205,10 @@ tasks:
 
           if [ -n "$local_workflow_stage" ]; then
             rm -f "$local_workflow_stage" >/dev/null 2>&1 || true
+          fi
+
+          if [ -n "$local_helper_env_stage" ]; then
+            rm -f "$local_helper_env_stage" >/dev/null 2>&1 || true
           fi
 
           if [ -n "$remote_tmp_dir" ]; then
@@ -262,6 +271,22 @@ tasks:
           "$local_workflow_stage" \
           "${proxmox_ssh_user}@${proxmox_ssh_host}:${remote_tmp_dir}/${workflow_remote_name}" >/dev/null
 
+        if [ -n "$(printf '%s' "$helper_env_file_content" | tr -d '[:space:]')" ]; then
+          local_helper_env_stage="$(mktemp)"
+          printf '%s\n' "$helper_env_file_content" > "$local_helper_env_stage"
+          chmod 600 "$local_helper_env_stage"
+
+          scp \
+            -i "$ssh_key_file" \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts_file" \
+            -o ConnectTimeout="$ssh_connect_timeout" \
+            -P "$proxmox_ssh_port" \
+            "$local_helper_env_stage" \
+            "${proxmox_ssh_user}@${proxmox_ssh_host}:${remote_tmp_dir}/${helper_env_remote_name}" >/dev/null
+        fi
+
         ssh \
           -i "$ssh_key_file" \
           -o BatchMode=yes \
@@ -270,7 +295,7 @@ tasks:
           -o ConnectTimeout="$ssh_connect_timeout" \
           -p "$proxmox_ssh_port" \
           "${proxmox_ssh_user}@${proxmox_ssh_host}" \
-          "chmod 700 '${remote_tmp_dir}/${helper_remote_name}' '${remote_tmp_dir}/${workflow_remote_name}'" >/dev/null
+          "chmod 700 '${remote_tmp_dir}/${helper_remote_name}' '${remote_tmp_dir}/${workflow_remote_name}' && if [ -f '${remote_tmp_dir}/${helper_env_remote_name}' ]; then chmod 600 '${remote_tmp_dir}/${helper_env_remote_name}'; fi" >/dev/null
 
         ssh \
           -tt \
@@ -280,7 +305,7 @@ tasks:
           -o ConnectTimeout="$ssh_connect_timeout" \
           -p "$proxmox_ssh_port" \
           "${proxmox_ssh_user}@${proxmox_ssh_host}" \
-          "cd '${remote_tmp_dir}' && LXC_DEFAULT_ID='${lxc_default_id}' LXC_DEFAULT_HOSTNAME='${lxc_default_hostname}' LXC_PRIMARY_NIC='${lxc_primary_nic}' REMOTE_TMP_DIR='${remote_tmp_dir}' REMOTE_TERM='${remote_term}' HELPER_SCRIPT_NAME='${helper_remote_name}' RESULT_FILE='${remote_result_file}' APPROVE_RECREATE='{{default "false" .APPROVE_RECREATE}}' bash '${remote_tmp_dir}/${workflow_remote_name}'" \
+          "cd '${remote_tmp_dir}' && LXC_DEFAULT_ID='${lxc_default_id}' LXC_DEFAULT_HOSTNAME='${lxc_default_hostname}' LXC_PRIMARY_NIC='${lxc_primary_nic}' REMOTE_TMP_DIR='${remote_tmp_dir}' REMOTE_TERM='${remote_term}' HELPER_SCRIPT_NAME='${helper_remote_name}' HELPER_ENV_FILE_NAME='${helper_env_remote_name}' RESULT_FILE='${remote_result_file}' APPROVE_RECREATE='{{default "false" .APPROVE_RECREATE}}' bash '${remote_tmp_dir}/${workflow_remote_name}'" \
           | tee "$session_log" || remote_exit_code=$?
 
         result_payload="$(ssh \
@@ -340,19 +365,20 @@ tasks:
       vars:
         - HELPER_SCRIPT
         - INVENTORY_GROUP
-        - LXC_DEFAULT_ID
-        - LXC_DEFAULT_HOSTNAME
     cmds:
       - task: :proxmox_lxc:workflow:run
         vars:
           HELPER_SCRIPT: '{{.HELPER_SCRIPT}}'
           WORKFLOW_SCRIPT: '{{default .DEFAULT_WORKFLOW_SCRIPT .WORKFLOW_SCRIPT}}'
           INVENTORY_GROUP: '{{.INVENTORY_GROUP}}'
-          LXC_DEFAULT_ID: '{{.LXC_DEFAULT_ID}}'
-          LXC_DEFAULT_HOSTNAME: '{{.LXC_DEFAULT_HOSTNAME}}'
-          LXC_PRIMARY_NIC: '{{default .DEFAULT_LXC_PRIMARY_NIC .LXC_PRIMARY_NIC}}'
-          REMOTE_TMP_PREFIX: '{{default .LXC_DEFAULT_HOSTNAME .REMOTE_TMP_PREFIX}}'
+          LXC_DEFAULT_ID: '{{default "" .LXC_DEFAULT_ID}}'
+          LXC_DEFAULT_HOSTNAME: '{{default "" .LXC_DEFAULT_HOSTNAME}}'
+          LXC_PRIMARY_NIC: '{{default "" .LXC_PRIMARY_NIC}}'
+          REMOTE_TMP_PREFIX: '{{default .DEFAULT_REMOTE_TMP_PREFIX .REMOTE_TMP_PREFIX}}'
           HELPER_REMOTE_NAME: '{{default "" .HELPER_REMOTE_NAME}}'
           WORKFLOW_REMOTE_NAME: '{{default .DEFAULT_REMOTE_WORKFLOW_NAME .WORKFLOW_REMOTE_NAME}}'
           REMOTE_RESULT_FILE: '{{default .DEFAULT_REMOTE_RESULT_FILE .REMOTE_RESULT_FILE}}'
+          HELPER_ENV_REMOTE_NAME: '{{default .DEFAULT_REMOTE_HELPER_ENV_NAME .HELPER_ENV_REMOTE_NAME}}'
+          HELPER_ENV_FILE_CONTENT: |
+            {{default "" .HELPER_ENV_FILE_CONTENT | nindent 12}}
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'

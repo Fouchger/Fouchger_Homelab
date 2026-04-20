@@ -67,8 +67,10 @@ ensure_env_key_value() {
   secrets_key="${2:?Missing key}"
   secrets_value="${3:?Missing value}"
 
-  ensure_parent_dir "$secrets_env_file"
-  touch "$secrets_env_file"
+  [ -f "$secrets_env_file" ] || {
+    printf 'Env file not found. Create it first: %s\n' "$secrets_env_file" >&2
+    return 1
+  }
 
   if grep -Eq "^${secrets_key}=" "$secrets_env_file"; then
     python3 - "$secrets_env_file" "$secrets_key" "$secrets_value" <<'PY'
