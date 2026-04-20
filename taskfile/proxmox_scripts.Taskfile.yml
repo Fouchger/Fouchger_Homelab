@@ -32,23 +32,6 @@ tasks:
           HELPER_REMOTE_NAME: 'mikrotik-routeros.sh'
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
-  opnsense:
-    desc: Create or reconcile the OPNsense VM
-    cmds:
-      - task: :proxmox_vm:create:standard
-        vars:
-          SERVER_NAME: 'opnsense01'
-          SECRET_NAME: 'OPNSENSE01_PASSWORD'
-          SECRET_PROMPT: 'Enter bootstrap password for opnsense01: '
-          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/opnsense-vm.sh'
-          WORKFLOW_SCRIPT: 'scripts/proxmox_workflows/generic-vm-discovery.sh'
-          INVENTORY_GROUP: 'firewalls'
-          VM_DEFAULT_ID: '21001'
-          VM_DEFAULT_HOSTNAME: 'opnsense01'
-          VM_PRIMARY_NIC: 'net0'
-          REMOTE_TMP_PREFIX: 'opnsense-vm'
-          HELPER_REMOTE_NAME: 'opnsense-vm.sh'
-          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
 
   technitiumdns:
     desc: Create the Technitium DNS LXC, or skip if it already exists unless recreate is explicitly approved
@@ -56,6 +39,7 @@ tasks:
       - task: :proxmox_lxc:create:standard
         vars:
           HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/technitiumdns.sh'
+          WORKFLOW_SCRIPT: 'scripts/proxmox_workflows/generic-lxc-discovery.sh'
           INVENTORY_GROUP: 'dns'
           LXC_DEFAULT_ID: '22000'
           LXC_DEFAULT_HOSTNAME: 'technitium01'
@@ -63,45 +47,5 @@ tasks:
           REMOTE_TMP_PREFIX: 'technitiumdns'
           HELPER_REMOTE_NAME: 'technitiumdns.sh'
           APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
+          
 
-  pihole:
-    desc: Create the Pi-hole LXC, or skip if it already exists unless recreate is explicitly approved
-    cmds:
-      - task: :proxmox_lxc:create:standard
-        vars:
-          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/pihole.sh'
-          INVENTORY_GROUP: 'dns'
-          LXC_DEFAULT_ID: '22011'
-          LXC_DEFAULT_HOSTNAME: 'pihole01'
-          LXC_PRIMARY_NIC: 'net0'
-          REMOTE_TMP_PREFIX: 'pihole'
-          HELPER_REMOTE_NAME: 'pihole.sh'
-          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
-
-  unbound:
-    desc: Create the Unbound LXC, or skip if it already exists unless recreate is explicitly approved
-    cmds:
-      - task: :proxmox_lxc:create:standard
-        vars:
-          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/unbound.sh'
-          INVENTORY_GROUP: 'dns'
-          LXC_DEFAULT_ID: '22012'
-          LXC_DEFAULT_HOSTNAME: 'unbound01'
-          LXC_PRIMARY_NIC: 'net0'
-          REMOTE_TMP_PREFIX: 'unbound'
-          HELPER_REMOTE_NAME: 'unbound.sh'
-          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'
-
-  calibre-web:
-    desc: Create the Calibre-Web LXC, or skip if it already exists unless recreate is explicitly approved
-    cmds:
-      - task: :proxmox_lxc:create:standard
-        vars:
-          HELPER_SCRIPT: 'scripts/proxmox_helper_scripts/calibre-web.sh'
-          INVENTORY_GROUP: 'media'
-          LXC_DEFAULT_ID: '22020'
-          LXC_DEFAULT_HOSTNAME: 'calibre01'
-          LXC_PRIMARY_NIC: 'net0'
-          REMOTE_TMP_PREFIX: 'calibre-web'
-          HELPER_REMOTE_NAME: 'calibre-web.sh'
-          APPROVE_RECREATE: '{{default "false" .APPROVE_RECREATE}}'

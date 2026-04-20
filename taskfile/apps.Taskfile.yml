@@ -24,11 +24,6 @@ silent: true
 
 vars:
   TASKFILE: '{{.TASKFILE | default "taskfile/apps.Taskfile.yml"}}'
-  APT_GET: 'apt-get'
-  SUDO: '{{.SUDO | default "sudo"}}'
-  DEBIAN_FRONTEND: 'noninteractive'
-  APT_LOCK_TIMEOUT: '{{.APT_LOCK_TIMEOUT | default "600"}}'
-  APT_LOCK_SLEEP: '{{.APT_LOCK_SLEEP | default "3"}}'
   HASHICORP_KEYRING: '/etc/apt/keyrings/hashicorp-archive-keyring.gpg'
   HASHICORP_LIST: '/etc/apt/sources.list.d/hashicorp.list'
   USE_PROXMOX_SCRIPT: '{{.USE_PROXMOX_SCRIPT | default "1"}}'
@@ -47,6 +42,7 @@ env:
 
 tasks:
   tasklist:
+    internal: true
     desc: Show available application install tasks
     cmds:
       - task --taskfile {{.TASKFILE}} --list
@@ -136,6 +132,7 @@ tasks:
           ARGS: 'autoclean -y'
 
   apt:wait:
+    internal: true
     desc: Wait until apt and dpkg locks are released
     cmds:
       - |
@@ -169,6 +166,7 @@ tasks:
         done
 
   apt:run:
+    internal: true
     desc: Run apt-get with lock handling by passing ARGS="..."
     vars:
       ARGS: '{{.ARGS | default ""}}'
@@ -183,12 +181,14 @@ tasks:
         {{.SUDO}} {{.APT_GET}} {{.ARGS}}
 
   apt:update:
+    internal: true
     desc: Run apt-get update with lock handling
     cmds:
       - task: apt:wait
       - '{{.SUDO}} {{.APT_GET}} update'
 
   apt:install:
+    internal: true
     desc: Run apt-get install with lock handling by passing PKGS="..."
     vars:
       PKGS: '{{.PKGS | default ""}}'
@@ -339,6 +339,7 @@ tasks:
         "${ansible_galaxy_cmd}" collection install -r ansible/requirements.yml --force
 
   hashicorp-repo:
+    internal: true
     desc: Configure the HashiCorp apt repository for Terraform and Packer
     cmds:
       - task: apt:update

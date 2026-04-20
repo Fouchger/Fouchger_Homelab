@@ -24,17 +24,8 @@ silent: true
 vars:
   TASKFILE: '{{.TASKFILE | default "taskfile/proxmox_vm.Taskfile.yml"}}'
 
-  SSH_KEY_DIR: '{{.HOME}}/.ssh'
-  KEY_NAME: 'id_ed25519'
-  SSH_KEY_FILE: '{{.SSH_KEY_DIR}}/{{.KEY_NAME}}'
-  SSH_KNOWN_HOSTS_FILE: '{{.SSH_KEY_DIR}}/known_hosts'
-
   INVENTORY_DIR: '{{.ROOT_DIR}}/state/ansible'
   INVENTORY_FILE: '{{.INVENTORY_DIR}}/inventory.yml'
-
-  DEFAULT_PROXMOX_SSH_PORT: '{{.PROXMOX_SSH_PORT | default "22"}}'
-  DEFAULT_PROXMOX_SSH_USER: '{{.PROXMOX_SSH_USER | default "root"}}'
-  DEFAULT_SSH_CONNECT_TIMEOUT: '{{.SSH_CONNECT_TIMEOUT | default "5"}}'
 
   VM_HELPERS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_helper_scripts'
   VM_WORKFLOWS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_workflows'
@@ -47,6 +38,7 @@ vars:
 
 tasks:
   tasklist:
+    internal: true
     desc: Show available Proxmox VM tasks
     cmds:
       - task --taskfile {{.TASKFILE}} --list
@@ -58,14 +50,7 @@ tasks:
         cat <<'EOF'
         Proxmox VM workflow tasks:
           task proxmox_vm:help
-          task proxmox_vm:tasklist
           task proxmox_vm:inventory:report
-
-        Workflow building blocks:
-          task proxmox_vm:password:ensure SECRET_NAME=<name>
-          task proxmox_vm:inventory:update INVENTORY_GROUP=<group> VM_HOSTNAME=<host> VM_VMID=<vmid> VM_MAC=<mac>
-          task proxmox_vm:workflow:run HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> VM_DEFAULT_ID=<id> VM_DEFAULT_HOSTNAME=<name> [APPROVE_RECREATE=true]
-          task proxmox_vm:create:standard SERVER_NAME=<name> SECRET_NAME=<secret> HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> VM_DEFAULT_ID=<id> VM_DEFAULT_HOSTNAME=<name> [APPROVE_RECREATE=true]
 
         Expected repository paths:
           VM helper scripts:   scripts/proxmox_helper_scripts/
@@ -89,6 +74,7 @@ tasks:
         echo 'Inventory file: {{.INVENTORY_FILE}}'
 
   password:ensure:
+    internal: true
     desc: Ensure a named VM bootstrap password exists in the encrypted passwords env
     requires:
       vars:
@@ -520,6 +506,7 @@ tasks:
           task proxmox_vm:inventory:ips:refresh
 
   create:standard:
+    internal: true
     desc: Standard template for a server-specific Proxmox VM create task
     requires:
       vars:

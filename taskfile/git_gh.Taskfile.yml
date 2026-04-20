@@ -22,6 +22,7 @@ vars:
 
 tasks:
   tasklist:
+    internal: true
     desc: Show available Git and GitHub tasks
     cmds:
       - task --taskfile {{.TASKFILE}} --list
@@ -222,12 +223,7 @@ tasks:
           git_name="$(get_env_value '{{.CONFIG_ENV_FILE}}' OPERATOR_NAME || true)"
         fi
         if [ -z "$git_name" ]; then
-          if [ ! -t 0 ]; then
-            echo 'GIT_USERNAME is missing and no interactive terminal is available.' >&2
-            exit 1
-          fi
-          printf 'Git Username: ' >&2
-          IFS= read -r git_name
+          git_name="$(prompt_if_missing_env_key '{{.CONFIG_ENV_FILE}}' GIT_USERNAME 'Git Username: ')"
         fi
         if [ -z "$git_name" ]; then
           echo 'Git Username cannot be empty.' >&2
@@ -242,12 +238,7 @@ tasks:
           git_email="$(get_env_value '{{.CONFIG_ENV_FILE}}' OPERATOR_EMAIL || true)"
         fi
         if [ -z "$git_email" ]; then
-          if [ ! -t 0 ]; then
-            echo 'GIT_EMAIL is missing and no interactive terminal is available.' >&2
-            exit 1
-          fi
-          printf 'Git Email Address: ' >&2
-          IFS= read -r git_email
+          git_email="$(prompt_if_missing_env_key '{{.CONFIG_ENV_FILE}}' GIT_EMAIL 'Git Email Address: ')"
         fi
         if [ -z "$git_email" ]; then
           echo 'Git Email Address cannot be empty.' >&2
@@ -343,12 +334,7 @@ tasks:
           github_username="$(get_env_value '{{.CONFIG_ENV_FILE}}' OPERATOR_NAME || true)"
         fi
         if [ -z "$github_username" ]; then
-          if [ ! -t 0 ]; then
-            echo 'GITHUB_USERNAME is missing and no interactive terminal is available.' >&2
-            exit 1
-          fi
-          printf 'GitHub Username: ' >&2
-          IFS= read -r github_username
+          github_username="$(prompt_if_missing_env_key '{{.CONFIG_ENV_FILE}}' GITHUB_USERNAME 'GitHub Username: ')"
         fi
         if [ -z "$github_username" ]; then
           echo 'GitHub Username cannot be empty.' >&2
@@ -364,16 +350,8 @@ tasks:
         prompt_for_token() {
           token_value=''
 
-          if [ ! -t 0 ]; then
-            echo 'GITHUB_TOKEN is missing and no interactive terminal is available.' >&2
-            exit 1
-          fi
-
-          printf 'GitHub Token: ' >&2
-          stty -echo
-          IFS= read -r token_value
-          stty echo
-          printf '\n' >&2
+          require_tty 'GITHUB_TOKEN'
+          token_value="$(tty_prompt_secret 'GitHub Token: ')"
 
           if [ -z "$token_value" ]; then
             echo 'GitHub Token cannot be empty.' >&2

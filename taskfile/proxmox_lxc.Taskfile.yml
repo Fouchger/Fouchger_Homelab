@@ -22,16 +22,7 @@ silent: true
 vars:
   TASKFILE: '{{.TASKFILE | default "taskfile/proxmox_lxc.Taskfile.yml"}}'
 
-  SSH_KEY_DIR: '{{.HOME}}/.ssh'
-  KEY_NAME: 'id_ed25519'
-  SSH_KEY_FILE: '{{.SSH_KEY_DIR}}/{{.KEY_NAME}}'
-  SSH_KNOWN_HOSTS_FILE: '{{.SSH_KEY_DIR}}/known_hosts'
-
   INVENTORY_FILE: '{{.ROOT_DIR}}/state/ansible/inventory.yml'
-
-  DEFAULT_PROXMOX_SSH_PORT: '{{.PROXMOX_SSH_PORT | default "22"}}'
-  DEFAULT_PROXMOX_SSH_USER: '{{.PROXMOX_SSH_USER | default "root"}}'
-  DEFAULT_SSH_CONNECT_TIMEOUT: '{{.SSH_CONNECT_TIMEOUT | default "5"}}'
 
   LXC_HELPERS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_helper_scripts'
   LXC_WORKFLOWS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_workflows'
@@ -44,6 +35,7 @@ vars:
 
 tasks:
   tasklist:
+    internal: true
     desc: Show available Proxmox LXC tasks
     cmds:
       - task --taskfile {{.TASKFILE}} --list
@@ -55,13 +47,7 @@ tasks:
         cat <<'EOF2'
         Proxmox LXC workflow tasks:
           task proxmox_lxc:help
-          task proxmox_lxc:tasklist
           task proxmox_lxc:inventory:report
-
-        Workflow building blocks:
-          task proxmox_lxc:inventory:update INVENTORY_GROUP=<group> LXC_HOSTNAME=<host> LXC_CTID=<ctid> LXC_MAC=<mac>
-          task proxmox_lxc:workflow:run HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> LXC_DEFAULT_ID=<id> LXC_DEFAULT_HOSTNAME=<name> [APPROVE_RECREATE=true]
-          task proxmox_lxc:create:standard HELPER_SCRIPT=<path> INVENTORY_GROUP=<group> LXC_DEFAULT_ID=<id> LXC_DEFAULT_HOSTNAME=<name>
 
         Behaviour:
           - Strict recreate is always used.
@@ -348,6 +334,7 @@ tasks:
         task proxmox_vm:inventory:ips:refresh
 
   create:standard:
+    internal: true
     desc: Standard template for a server-specific Proxmox LXC create or skip task
     requires:
       vars:

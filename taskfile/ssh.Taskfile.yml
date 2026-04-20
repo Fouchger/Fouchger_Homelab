@@ -19,10 +19,7 @@ version: '3'
 silent: true
 
 vars:
-  SSH_KEY_DIR: '{{.HOME}}/.ssh'
-  KEY_NAME: 'id_ed25519'
   KEY_PATH: '{{.SSH_KEY_DIR}}/{{.KEY_NAME}}'
-  SSH_KNOWN_HOSTS_FILE: '{{.SSH_KEY_DIR}}/known_hosts'
 
   PROXMOX_SSH_HOST: '{{.PROXMOX_SSH_HOST | default ""}}'
   PROXMOX_SSH_PORT: '{{.PROXMOX_SSH_PORT | default "22"}}'
@@ -152,12 +149,8 @@ tasks:
         fi
 
         if [ -z "$proxmox_ssh_host" ]; then
-          if [ ! -t 0 ]; then
-            echo 'PROXMOX_SSH_HOST is missing and no interactive terminal is available.' >&2
-            exit 1
-          fi
-          printf 'Proxmox SSH host or IP address: ' >&2
-          IFS= read -r proxmox_ssh_host
+          require_tty 'PROXMOX_SSH_HOST'
+          proxmox_ssh_host="$(tty_prompt 'Proxmox SSH host or IP address: ')"
         fi
 
         if [ -z "$proxmox_ssh_port" ]; then
@@ -286,8 +279,8 @@ tasks:
         echo ''
 
         if [ "{{.NONINTERACTIVE}}" != "1" ]; then
-          printf 'Trust this host key and add it to known_hosts? [y/N]: ' >&2
-          IFS= read -r confirm
+          require_tty 'Proxmox host key confirmation'
+          confirm="$(tty_prompt 'Trust this host key and add it to known_hosts? [y/N]: ')"
           case "$confirm" in
             y|Y|yes|YES)
               ;;

@@ -24,6 +24,44 @@ ensure_parent_dir() {
   mkdir -p "$(dirname "$secrets_file_path")"
 }
 
+
+tty_available() {
+  [ -r /dev/tty ] && [ -w /dev/tty ]
+}
+
+require_tty() {
+  tty_prompt_context="${1:-interactive input}"
+  tty_available || {
+    printf 'A TTY is required for %s and no interactive terminal is available
+' "$tty_prompt_context" >&2
+    exit 1
+  }
+}
+
+tty_prompt() {
+  tty_prompt_text="${1:?Missing prompt text}"
+  tty_prompt_value=''
+
+  require_tty "$tty_prompt_text"
+  printf '%s' "$tty_prompt_text" > /dev/tty
+  IFS= read -r tty_prompt_value < /dev/tty || true
+  printf '%s' "$tty_prompt_value"
+}
+
+tty_prompt_secret() {
+  tty_prompt_text="${1:?Missing prompt text}"
+  tty_prompt_value=''
+
+  require_tty "$tty_prompt_text"
+  printf '%s' "$tty_prompt_text" > /dev/tty
+  stty -echo < /dev/tty
+  IFS= read -r tty_prompt_value < /dev/tty || true
+  stty echo < /dev/tty
+  printf '
+' > /dev/tty
+  printf '%s' "$tty_prompt_value"
+}
+
 ensure_env_key_value() {
   secrets_env_file="${1:?Missing env file}"
   secrets_key="${2:?Missing key}"
@@ -84,25 +122,23 @@ prompt_if_missing_env_key() {
 
   secrets_current_value="$(get_env_value "$secrets_env_file" "$secrets_key" || true)"
   if [ -n "$secrets_current_value" ]; then
-    printf '%s\n' "$secrets_current_value"
+    printf '%s
+' "$secrets_current_value"
     return 0
   fi
 
-  if [ ! -t 0 ]; then
-    printf 'A value is required for %s and no interactive terminal is available\n' "$secrets_key" >&2
-    exit 1
-  fi
-
-  printf '%s' "$secrets_prompt_text" >&2
-  IFS= read -r secrets_current_value
+  require_tty "$secrets_key"
+  secrets_current_value="$(tty_prompt "$secrets_prompt_text")"
 
   if [ -z "$secrets_current_value" ]; then
-    printf 'A value is required for %s\n' "$secrets_key" >&2
+    printf 'A value is required for %s
+' "$secrets_key" >&2
     exit 1
   fi
 
   ensure_env_key_value "$secrets_env_file" "$secrets_key" "$secrets_current_value"
-  printf '%s\n' "$secrets_current_value"
+  printf '%s
+' "$secrets_current_value"
 }
 
 sops_decrypt_to_tmp() {
