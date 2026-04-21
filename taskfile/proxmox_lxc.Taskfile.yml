@@ -22,8 +22,6 @@ silent: true
 vars:
   TASKFILE: '{{.TASKFILE | default "taskfile/proxmox_lxc.Taskfile.yml"}}'
 
-  INVENTORY_FILE: '{{.ROOT_DIR}}/state/ansible/inventory.yml'
-
   LXC_HELPERS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_helper_scripts'
   LXC_WORKFLOWS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_workflows'
   DEFAULT_WORKFLOW_SCRIPT: '{{.LXC_WORKFLOWS_DIR}}/generic-lxc-discovery.sh'

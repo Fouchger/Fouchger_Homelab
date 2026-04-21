@@ -24,9 +24,6 @@ silent: true
 vars:
   TASKFILE: '{{.TASKFILE | default "taskfile/proxmox_vm.Taskfile.yml"}}'
 
-  INVENTORY_DIR: '{{.ROOT_DIR}}/state/ansible'
-  INVENTORY_FILE: '{{.INVENTORY_DIR}}/inventory.yml'
-
   VM_HELPERS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_helper_scripts'
   VM_WORKFLOWS_DIR: '{{.ROOT_DIR}}/scripts/proxmox_workflows'
   DEFAULT_WORKFLOW_SCRIPT: '{{.VM_WORKFLOWS_DIR}}/generic-vm-discovery.sh'
