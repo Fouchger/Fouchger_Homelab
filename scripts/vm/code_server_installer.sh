@@ -16,202 +16,125 @@
 #   - Generates a random password in non-interactive mode
 # ============================================================
 
-set -Eeuo pipefail
-
-APP="Coder code-server"
 VERSION="4.114.0"
-CONFIG_DIR="${HOME}/.config/code-server"
-CONFIG_FILE="${CONFIG_DIR}/config.yaml"
-HOSTNAME_SHORT="$(hostname)"
-IP_ADDRESS="$(hostname -I 2>/dev/null | awk '{print $1}')"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TASK_HELPERS_FILE="${REPO_ROOT}/scripts/task_helpers.sh"
-PASSWORDS_ENC_ENV_FILE="${REPO_ROOT}/state/secrets/passwords/passwords.enc.env"
-PASSWORDS_ENC_ENV_FILE_REL="state/secrets/passwords/passwords.enc.env"
-AGE_KEYS_FILE="${REPO_ROOT}/state/secrets/age/keys.txt"
-PASSWORD_KEY="CODE_SERVER_PASSWORD"
-CODE_SERVER_PASSWORD=""
-NONINTERACTIVE="${NONINTERACTIVE:-0}"
 
-YW='\033[33m'
-BL='\033[36m'
-RD='\033[01;31m'
-GN='\033[1;92m'
-CL='\033[m'
-BFR='\r\033[K'
-HOLD='-'
-CM="${GN}✓${CL}"
+#!/usr/bin/env bash
 
-trap 'error_exit "Command failed at line ${LINENO}"' ERR
+# Copyright (c) 2021-2026 tteck
+# Author: tteck (tteckster)
+# License: MIT | https://github.com/community-scripts/ProxmoxVE/raw/main/LICENSE
+# Source: https://coder.com/ | Github: https://github.com/coder/code-server
 
-header_info() {
-  cat <<'EOF'
-   ______          __        _____
+function header_info {
+  cat <<"EOF"
+   ______          __        _____                          
   / ____/___  ____/ /__     / ___/___  ______   _____  _____
  / /   / __ \/ __  / _ \    \__ \/ _ \/ ___/ | / / _ \/ ___/
-/ /___/ /_/ / /_/ /  __/   ___/ /  __/ /   | |/ /  __/ /
-\____/\____/\__,_/\___/   /____/\___/_/    |___/\___/_/
-
+/ /___/ /_/ / /_/ /  __/   ___/ /  __/ /   | |/ /  __/ /    
+\____/\____/\__,_/\___/   /____/\___/_/    |___/\___/_/     
+ 
 EOF
 }
+IP=$(hostname -I | awk '{print $1}')
+YW=$(echo "\033[33m")
+BL=$(echo "\033[36m")
+RD=$(echo "\033[01;31m")
+BGN=$(echo "\033[4;92m")
+GN=$(echo "\033[1;92m")
+DGN=$(echo "\033[32m")
+CL=$(echo "\033[m")
+BFR="\\r\\033[K"
+HOLD="-"
+CM="${GN}✓${CL}"
+APP="Coder Code Server"
+hostname="$(hostname)"
 
-error_exit() {
-  local reason="${1:-Unknown failure occurred.}"
-  echo -e "${RD}ERROR${CL} ${reason}" >&2
-  exit 1
+# Telemetry
+source <(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/misc/api.func) 2>/dev/null || true
+declare -f init_tool_telemetry &>/dev/null && init_tool_telemetry "coder-code-server" "addon"
+
+set -o errexit
+set -o errtrace
+set -o nounset
+set -o pipefail
+shopt -s expand_aliases
+alias die='EXIT=$? LINE=$LINENO error_exit'
+trap die ERR
+
+function error_exit() {
+  trap - ERR
+  local reason="Unknown failure occured."
+  local msg="${1:-$reason}"
+  local flag="${RD}‼ ERROR ${CL}$EXIT@$LINE"
+  echo -e "$flag $msg" 1>&2
+  exit "$EXIT"
 }
+clear
+header_info
+if command -v pveversion >/dev/null 2>&1; then
+  echo -e "⚠️  Can't Install on Proxmox "
+  exit
+fi
+if [ -e /etc/alpine-release ]; then
+  echo -e "⚠️  Can't Install on Alpine"
+  exit
+fi
+while true; do
+  read -p "This will Install ${APP} on $hostname. Proceed(y/n)?" yn
+  case $yn in
+  [Yy]*) break ;;
+  [Nn]*) exit ;;
+  *) echo "Please answer yes or no." ;;
+  esac
+done
 
-msg_info() {
+function msg_info() {
   local msg="$1"
-  echo -ne " ${HOLD} ${YW}${msg}...${CL}"
+  echo -ne " ${HOLD} ${YW}${msg}..."
 }
 
-msg_ok() {
+function msg_ok() {
   local msg="$1"
   echo -e "${BFR} ${CM} ${GN}${msg}${CL}"
 }
 
-ensure_not_proxmox_host() {
-  if command -v pveversion >/dev/null 2>&1; then
-    echo "Cannot install on a Proxmox host" >&2
-    exit 1
-  fi
-}
+msg_info "Installing Dependencies"
+apt-get update &>/dev/null
+apt-get install -y curl &>/dev/null
+apt-get install -y git &>/dev/null
+msg_ok "Installed Dependencies"
 
-ensure_not_alpine() {
-  if [[ -e /etc/alpine-release ]]; then
-    echo "Cannot install on Alpine" >&2
-    exit 1
-  fi
-}
+# VERSION=$(curl -fsSL https://api.github.com/repos/coder/code-server/releases/latest |
+#   grep "tag_name" |
+#   awk '{print substr($2, 3, length($2)-4) }')
 
-confirm_install() {
-  if [[ "${NONINTERACTIVE}" == "1" ]]; then
-    return 0
-  fi
+msg_info "Installing Code-Server v${VERSION}"
+config_path="${HOME}/.config/code-server/config.yaml"
+preexisting_config=false
 
-  while true; do
-    read -r -p "This will install ${APP} ${VERSION} on ${HOSTNAME_SHORT}. Proceed (y/n)? " yn
-    case "${yn}" in
-      [Yy]*) return 0 ;;
-            [Nn]*) exit 0 ;;
-            *) echo "Please answer y or n." ;;
-          esac
-  done
-}
+if [ -f "$config_path" ]; then
+  preexisting_config=true
+fi
 
-install_dependencies() {
-  msg_info "Installing dependencies"
-  apt-get update -qq
-  apt-get install -y -qq curl ca-certificates openssl
-  msg_ok "Installed dependencies"
-}
+curl -fOL https://github.com/coder/code-server/releases/download/v"$VERSION"/code-server_"${VERSION}"_amd64.deb &>/dev/null
+dpkg -i code-server_"${VERSION}"_amd64.deb &>/dev/null
+rm -rf code-server_"${VERSION}"_amd64.deb
+mkdir -p "${HOME}/.config/code-server/"
 
-install_code_server() {
-  msg_info "Installing ${APP} v${VERSION}"
-  curl -fsSL https://code-server.dev/install.sh | sh -s -- --version "${VERSION}"
-  msg_ok "Installed ${APP} v${VERSION}"
-}
-
-generate_random_password() {
-  openssl rand -base64 24 | tr -d '\n'
-}
-
-prompt_for_password() {
-  if [[ ! -t 0 ]]; then
-    return 1
-  fi
-
-  if [[ -f "${TASK_HELPERS_FILE}" ]]; then
-    # shellcheck disable=SC1090
-    . "${TASK_HELPERS_FILE}"
-    prompt_secret_confirm 'code-server password: ' 'Confirm code-server password: '
-    return 0
-  fi
-
-  return 1
-}
-
-set_bootstrap_password() {
-  if [[ -n "${CODE_SERVER_PASSWORD}" ]]; then
-    return 0
-  fi
-
-  if [[ "${NONINTERACTIVE}" != "1" ]]; then
-    CODE_SERVER_PASSWORD="$(prompt_for_password || true)"
-  fi
-
-  if [[ -z "${CODE_SERVER_PASSWORD}" ]]; then
-    CODE_SERVER_PASSWORD="$(generate_random_password)"
-  fi
-}
-
-store_password_in_repo_secrets() {
-  if [[ ! -f "${TASK_HELPERS_FILE}" || ! -f "${PASSWORDS_ENC_ENV_FILE}" || ! -f "${AGE_KEYS_FILE}" ]]; then
-    return 0
-  fi
-
-  # shellcheck disable=SC1090
-  . "${TASK_HELPERS_FILE}"
-  encrypted_dotenv_upsert "${PASSWORD_KEY}" "${CODE_SERVER_PASSWORD}" "${PASSWORDS_ENC_ENV_FILE}" "${PASSWORDS_ENC_ENV_FILE_REL}"
-}
-
-write_default_config_if_missing() {
-  mkdir -p "${CONFIG_DIR}"
-
-  if [[ -f "${CONFIG_FILE}" ]]; then
-    msg_ok "Existing config preserved"
-    return
-  fi
-
-  set_bootstrap_password
-  msg_info "Creating starter config"
-  cat > "${CONFIG_FILE}" <<EOF
+if [ "$preexisting_config" = false ]; then
+cat <<EOF >"$config_path"
 bind-addr: 0.0.0.0:8680
-auth: password
-password: ${CODE_SERVER_PASSWORD}
+auth: none
+password: 
 cert: false
 EOF
-  chmod 600 "${CONFIG_FILE}"
-  store_password_in_repo_secrets || true
-  msg_ok "Created starter config"
-}
+fi
+systemctl enable -q --now code-server@"$USER"
+systemctl restart code-server@"$USER"
+if ! systemctl is-active --quiet code-server@"$USER"; then
+  error_exit "code-server service failed to start."
+fi
+msg_ok "Installed Code-Server v${VERSION} on $hostname"
 
-enable_service() {
-  msg_info "Enabling code-server service"
-  systemctl enable --now "code-server@${USER}"
-  systemctl restart "code-server@${USER}"
-  msg_ok "Enabled code-server service"
-}
-
-show_summary() {
-  local access_ip="${IP_ADDRESS:-127.0.0.1}"
-
-  echo
-  echo -e "${GN}${APP} ${VERSION} installed on ${HOSTNAME_SHORT}${CL}"
-  echo -e "Local URL:   ${BL}http://127.0.0.1:8680${CL}"
-  echo -e "LAN URL:     ${BL}http://${access_ip}:8680${CL}"
-  echo -e "Config file: ${BL}${CONFIG_FILE}${CL}"
-  if [[ -n "${CODE_SERVER_PASSWORD}" ]]; then
-    echo "Bootstrap password was created for first-run access."
-    if [[ -f "${PASSWORDS_ENC_ENV_FILE}" ]]; then
-      echo "A copy was also written to ${PASSWORDS_ENC_ENV_FILE}."
-    fi
-  fi
-  echo
-}
-
-main() {
-  clear || true
-  header_info
-  ensure_not_proxmox_host
-  ensure_not_alpine
-  confirm_install
-  install_dependencies
-  install_code_server
-  write_default_config_if_missing
-  enable_service
-  show_summary
-}
-
-main "$@"
+echo -e "${APP} should be reachable by going to the following URL.
+         ${BL}http://$IP:8680${CL} \n"

@@ -6,7 +6,6 @@
 # Notes:
 #   - This file is intended to be sourced by Task shell commands.
 #   - It focuses on safe dotenv and encrypted file handling.
-#   - It is written to remain portable for /bin/sh execution.
 # ================================================================
 
 set -eu

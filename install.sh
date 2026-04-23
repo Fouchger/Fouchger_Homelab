@@ -46,7 +46,7 @@ _success() { printf '%s\n' "SUCCESS: $*"; }
 # Globals used across steps
 # ----------------------------
 readonly REPO="Fouchger_Homelab"
-readonly REPO_BRANCH="main3"
+readonly REPO_BRANCH="main4"
 readonly REPO_SLUG="Fouchger/${REPO}"
 
 BRANCH="${HOMELAB_BRANCH:-${REPO_BRANCH}}"
@@ -148,7 +148,7 @@ _apt_install() {
   fi
 
   # shellcheck disable=SC2068
-  _as_root env "${env_args[@]}" apt-get install -y --no-install-recommends $@
+  _as_root env "${env_args[@]}" apt-get install -y --no-install-recommends "$@"
 }
 
 _pkg_installed() {

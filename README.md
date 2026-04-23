@@ -16,7 +16,7 @@ A Taskfile-driven homelab operations repository for workstation bootstrap, SSH t
 Run from ubuntu server/lxc/vm to install repo
 
 ```
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fouchger/Fouchger_Homelab/refs/heads/main3/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Fouchger/Fouchger_Homelab/refs/heads/main4/install.sh)"
 ```
 
 ## Repository layout
